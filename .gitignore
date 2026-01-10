@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets - IMPORTANT: Never commit these!
+.streamlit/secrets.toml
+.env
+*.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+META/

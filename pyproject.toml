@@ -1,0 +1,23 @@
+[project]
+name = "mesh-search-tool"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "lxml>=6.0.2",
+    "polars>=1.36.1",
+    "pydantic>=2.12.5",
+    "rapidfuzz>=3.14.3",
+    "requests>=2.31.0",
+    "streamlit>=1.52.2",
+]
+
+[dependency-groups]
+dev = [
+    "jaraco-classes>=3.4.0",
+    "jaraco-context>=6.0.2",
+    "jaraco-text>=4.0.0",
+    "platformdirs>=4.5.1",
+    "pyinstaller>=6.17.0",
+]
