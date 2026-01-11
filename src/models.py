@@ -15,6 +15,12 @@ class Database(str, Enum):
     SEMANTIC_SCHOLAR = "semantic_scholar"
 
 
+class DataSource(str, Enum):
+    """Data source for term expansion."""
+    LOCAL = "local"  # Local files (META/ directory)
+    API = "api"      # UMLS REST API
+
+
 # =============================================================================
 # Search Settings (Detailed Options)
 # =============================================================================
@@ -61,7 +67,7 @@ class SearchSettings(BaseModel):
         default=2,
         ge=0,
         le=5,
-        description="Word distance for proximity search [tiab:~N]. 0=disabled, 1-5=allow N words between terms."
+        description="Word distance for proximity search [Title/Abstract:~N]. 0=disabled, 1-5=allow N words between terms."
     )
 
     @classmethod
@@ -146,20 +152,30 @@ class MeSHDescriptor(BaseModel):
 
 class SubConcept(BaseModel):
     """
-    A sub-concept within a PICO category.
+    A sub-concept within a PICO category with semantic decomposition.
     
-    Sub-concepts represent distinct aspects that should be AND'd together.
-    Terms within a sub-concept are OR'd together.
+    The key insight: separate expandable CORE concepts from TEXT-ONLY modifiers.
     
-    Example for "pediatric patients under 12":
-    - SubConcept(name="age_group", terms=["child", "pediatric", "children"])
-    - SubConcept(name="age_limit", terms=["under 12", "age < 12"])
+    - core_concept: Main medical entity → EXPAND via UMLS (e.g., "Thyroid Eye Disease")
+    - modifier: Constraining adjective → TEXT-ONLY search, no UMLS (e.g., "active", "acute")
+    - direction_of_effect: Outcome direction → DISCARDED to avoid bias (e.g., "reduction")
     
-    Query: (child OR pediatric OR children) AND (under 12 OR "age < 12")
+    This prevents searching for "Active Thyroid Eye Disease" as a phrase (fails in UMLS)
+    and instead constructs: (TED synonyms...) AND (active[tiab])
     """
     name: str  # Descriptive name for the sub-concept
-    original_term: str  # The original extracted term
-    expanded_terms: List[str] = []  # Synonyms/related terms after expansion
+    
+    # NEW: Semantic decomposition
+    core_concept: str = ""  # The main entity to expand via UMLS
+    modifier: Optional[str] = None  # Constraining adjective (text-only, no UMLS expansion)
+    direction_of_effect: Optional[str] = None  # Outcome direction (DISCARDED to avoid bias)
+    explanation: Optional[str] = None  # LLM reasoning
+    
+    # LEGACY: Keep for backward compatibility during transition
+    original_term: str = ""  # Will be deprecated, use core_concept
+    expanded_terms: List[str] = []  # LLM-provided synonyms (still used)
+    
+    # Expansion results
     mesh_descriptor: Optional[MeSHDescriptor] = None
     umls_synonyms: List[str] = []
     

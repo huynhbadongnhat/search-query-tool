@@ -1,0 +1,541 @@
+{
+	"info": {
+		"_postman_id": "776900f9-1cb7-4eda-a575-c1f93f1cb32c",
+		"name": "UMLS API Samples",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Search for Concepts",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://uts-ws.nlm.nih.gov/rest/search/current?apiKey={{api-key}}&string=renal tubular acidosis&pageSize=200",
+					"protocol": "https",
+					"host": [
+						"uts-ws",
+						"nlm",
+						"nih",
+						"gov"
+					],
+					"path": [
+						"rest",
+						"search",
+						"current"
+					],
+					"query": [
+						{
+							"key": "apiKey",
+							"value": "{{api-key}}",
+							"description": "See: https://uts.nlm.nih.gov/uts/profile"
+						},
+						{
+							"key": "string",
+							"value": "renal tubular acidosis",
+							"description": "Required. Any string."
+						},
+						{
+							"key": "includeObsolete",
+							"value": "",
+							"description": "true, false (default)",
+							"disabled": true
+						},
+						{
+							"key": "includeSuppressible",
+							"value": "",
+							"description": "true, false (default)",
+							"disabled": true
+						},
+						{
+							"key": "inputType",
+							"value": "atom",
+							"description": "atom (default), code, sourceConcept, sourceDescriptor’, sourceUi, tty",
+							"disabled": true
+						},
+						{
+							"key": "returnIdType",
+							"value": "concept",
+							"description": "concept (default), code, sourceConcept, sourceDescriptor, sourceUi",
+							"disabled": true
+						},
+						{
+							"key": "sabs",
+							"value": "",
+							"description": "Comma-separated abbreviations (SNOMEDCT_US, ICD10CM), see: https://www.nlm.nih.gov/research/umls/sourcereleasedocs/index.html\n\nParameter must be unchecked or at least one vocabulary must be entered, otherwise no results will be returned.",
+							"disabled": true
+						},
+						{
+							"key": "searchType",
+							"value": "words",
+							"description": "words (default), exact, leftTruncation, rightTruncation, approximate, normalizedString, normalizedWords",
+							"disabled": true
+						},
+						{
+							"key": "pageSize",
+							"value": "200",
+							"description": "1, 2, 3, 25 (default), etc.",
+							"disabled": true
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Search for Exact String",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://uts-ws.nlm.nih.gov/rest/search/current?apiKey={{api-key}}&string=fracture of carpal bone&searchType=exact&pageSize=200",
+					"protocol": "https",
+					"host": [
+						"uts-ws",
+						"nlm",
+						"nih",
+						"gov"
+					],
+					"path": [
+						"rest",
+						"search",
+						"current"
+					],
+					"query": [
+						{
+							"key": "apiKey",
+							"value": "{{api-key}}",
+							"description": "See: https://uts.nlm.nih.gov/uts/profile"
+						},
+						{
+							"key": "string",
+							"value": "fracture of carpal bone",
+							"description": "Required. Any string."
+						},
+						{
+							"key": "searchType",
+							"value": "exact",
+							"description": "words (default), exact, leftTruncation, rightTruncation, approximate, normalizedString, normalizedWords"
+						},
+						{
+							"key": "inputType",
+							"value": "",
+							"description": "atom (default), code, sourceConcept, sourceDescriptor’, sourceUi, tty",
+							"disabled": true
+						},
+						{
+							"key": "includeObsolete",
+							"value": "",
+							"description": "true, false (default)",
+							"disabled": true
+						},
+						{
+							"key": "includeSuppressible",
+							"value": "",
+							"description": "true, false (default)",
+							"disabled": true
+						},
+						{
+							"key": "returnIdType",
+							"value": "concept",
+							"description": "concept (default), code, sourceConcept, sourceDescriptor, sourceUi\n\nParameter must be unchecked or at least one type must be entered, otherwise no results will be returned.",
+							"disabled": true
+						},
+						{
+							"key": "sabs",
+							"value": "",
+							"description": "Comma-separated abbreviations (SNOMEDCT_US, ICD10CM), see: https://www.nlm.nih.gov/research/umls/sourcereleasedocs/index.html\nParameter must be unchecked or at least one vocabulary must be entered, otherwise no results will be returned.",
+							"disabled": true
+						},
+						{
+							"key": "pageSize",
+							"value": "200",
+							"description": "1, 2, 3, 25 (default), etc.",
+							"disabled": true
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Return Set of Codes",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://uts-ws.nlm.nih.gov/rest/search/current?apiKey={{api-key}}&string=renal tubular acidosis&returnIdType=code&sabs=SNOMEDCT_US&pageSize=200",
+					"protocol": "https",
+					"host": [
+						"uts-ws",
+						"nlm",
+						"nih",
+						"gov"
+					],
+					"path": [
+						"rest",
+						"search",
+						"current"
+					],
+					"query": [
+						{
+							"key": "apiKey",
+							"value": "{{api-key}}",
+							"description": "See: https://uts.nlm.nih.gov/uts/profile"
+						},
+						{
+							"key": "string",
+							"value": "renal tubular acidosis",
+							"description": "Required. Any string."
+						},
+						{
+							"key": "returnIdType",
+							"value": "code",
+							"description": "concept (default), code, sourceConcept, sourceDescriptor, sourceUi\n\nParameter must be unchecked or at least one type must be entered, otherwise no results will be returned."
+						},
+						{
+							"key": "searchType",
+							"value": "words",
+							"description": "words (default), exact, leftTruncation, rightTruncation, approximate, normalizedString, normalizedWords",
+							"disabled": true
+						},
+						{
+							"key": "inputType",
+							"value": "atom",
+							"description": "atom (default), code, sourceConcept, sourceDescriptor’, sourceUi, tty",
+							"disabled": true
+						},
+						{
+							"key": "includeObsolete",
+							"value": "",
+							"description": "true, false (default)",
+							"disabled": true
+						},
+						{
+							"key": "includeSuppressible",
+							"value": "",
+							"description": "true, false (default)",
+							"disabled": true
+						},
+						{
+							"key": "sabs",
+							"value": "SNOMEDCT_US",
+							"description": "Comma-separated abbreviations (SNOMEDCT_US, ICD10CM), see: https://www.nlm.nih.gov/research/umls/sourcereleasedocs/index.html\nParameter must be unchecked or at least one vocabulary must be entered, otherwise no results will be returned."
+						},
+						{
+							"key": "pageSize",
+							"value": "200",
+							"description": "1, 2, 3, 25 (default), etc.",
+							"disabled": true
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Atom Names for a Concept",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+                                        "raw": "https://uts-ws.nlm.nih.gov/rest/content/current/CUI/C0155502/atoms?apiKey={{api-key}}&pageSize=200",
+					"protocol": "https",
+					"host": [
+						"uts-ws",
+						"nlm",
+						"nih",
+						"gov"
+					],
+					"path": [
+						"rest",
+						"content",
+						"current",
+						"CUI",
+						"C0155502",
+						"atoms"
+					],
+					"query": [
+						{
+							"key": "apiKey",
+							"value": "{{api-key}}"
+						},
+						{
+							"key": "sabs",
+							"value": "",
+							"description": "Returns all by default. Example: SNOMEDCT_US,ICD10CM",
+							"disabled": true
+						},
+						{
+							"key": "ttys",
+							"value": "",
+							"description": "Returns all by default. Example: PT,MH",
+							"disabled": true
+						},
+						{
+							"key": "language",
+							"value": "",
+							"description": "Returns all by default. Example: ENG",
+							"disabled": true
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Retrieving Source-Asserted Information",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://uts-ws.nlm.nih.gov/rest/content/current/source/SNOMEDCT_US/9468002?apiKey={{api-key}}",
+					"protocol": "https",
+					"host": [
+						"uts-ws",
+						"nlm",
+						"nih",
+						"gov"
+					],
+					"path": [
+						"rest",
+						"content",
+						"current",
+						"source",
+						"SNOMEDCT_US",
+						"9468002"
+					],
+					"query": [
+						{
+							"key": "apiKey",
+							"value": "{{api-key}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Retrieving Source-Asserted Information - Atoms",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+                                        "raw": "https://uts-ws.nlm.nih.gov/rest/content/current/source/SNOMEDCT_US/9468002/atoms?apiKey={{api-key}}&pageSize=200",
+					"protocol": "https",
+					"host": [
+						"uts-ws",
+						"nlm",
+						"nih",
+						"gov"
+					],
+					"path": [
+						"rest",
+						"content",
+						"current",
+						"source",
+						"SNOMEDCT_US",
+						"9468002",
+						"atoms"
+					],
+					"query": [
+						{
+							"key": "apiKey",
+							"value": "{{api-key}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Retrieving Source-Asserted Information - Parents",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://uts-ws.nlm.nih.gov/rest/content/current/source/SNOMEDCT_US/9468002/parents?apiKey={{api-key}}",
+					"protocol": "https",
+					"host": [
+						"uts-ws",
+						"nlm",
+						"nih",
+						"gov"
+					],
+					"path": [
+						"rest",
+						"content",
+						"current",
+						"source",
+						"SNOMEDCT_US",
+						"9468002",
+						"parents"
+					],
+					"query": [
+						{
+							"key": "apiKey",
+							"value": "{{api-key}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Retrieving Source-Asserted Information - Children",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://uts-ws.nlm.nih.gov/rest/content/current/source/SNOMEDCT_US/9468002/children?apiKey={{api-key}}",
+					"protocol": "https",
+					"host": [
+						"uts-ws",
+						"nlm",
+						"nih",
+						"gov"
+					],
+					"path": [
+						"rest",
+						"content",
+						"current",
+						"source",
+						"SNOMEDCT_US",
+						"9468002",
+						"children"
+					],
+					"query": [
+						{
+							"key": "apiKey",
+							"value": "{{api-key}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Retrieving Source-Asserted Information - Ancestors",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+                                        "raw": "https://uts-ws.nlm.nih.gov/rest/content/current/source/SNOMEDCT_US/9468002/ancestors?pageSize=200&apiKey={{api-key}}",
+					"protocol": "https",
+					"host": [
+						"uts-ws",
+						"nlm",
+						"nih",
+						"gov"
+					],
+					"path": [
+						"rest",
+						"content",
+						"current",
+						"source",
+						"SNOMEDCT_US",
+						"9468002",
+						"ancestors"
+					],
+                                        "query": [
+                                                {
+                                                        "key": "pageSize",
+                                                        "value": "200"
+                                                },
+                                                {
+                                                        "key": "apiKey",
+                                                        "value": "{{api-key}}"
+                                                }
+                                        ]
+                                }
+                        },
+                        "response": []
+                },
+                {
+			"name": "Retrieving Source-Asserted Information - Descendants",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+                                        "raw": "https://uts-ws.nlm.nih.gov/rest/content/current/source/SNOMEDCT_US/9468002/descendants?pageSize=200&apiKey={{api-key}}",
+					"protocol": "https",
+					"host": [
+						"uts-ws",
+						"nlm",
+						"nih",
+						"gov"
+					],
+					"path": [
+						"rest",
+						"content",
+						"current",
+						"source",
+						"SNOMEDCT_US",
+						"9468002",
+						"descendants"
+					],
+                                        "query": [
+                                                {
+                                                        "key": "pageSize",
+                                                        "value": "200"
+                                                },
+                                                {
+                                                        "key": "apiKey",
+                                                        "value": "{{api-key}}"
+                                                }
+                                        ]
+                                }
+                        },
+                        "response": []
+                },
+                {
+			"name": "Crosswalk from one Vocabulary to Another",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://uts-ws.nlm.nih.gov/rest/crosswalk/current/source/HPO/HP:0001947?apiKey={{api-key}}&targetSource=SNOMEDCT_US",
+					"protocol": "https",
+					"host": [
+						"uts-ws",
+						"nlm",
+						"nih",
+						"gov"
+					],
+					"path": [
+						"rest",
+						"crosswalk",
+						"current",
+						"source",
+						"HPO",
+						"HP:0001947"
+					],
+					"query": [
+						{
+							"key": "apiKey",
+							"value": "{{api-key}}"
+						},
+						{
+							"key": "targetSource",
+							"value": "SNOMEDCT_US",
+							"description": "Any root source abbreviation in the UMLS. See the “Abbreviation” column for a list of UMLS source vocabulary abbreviations."
+						},
+						{
+							"key": "includeObsolete",
+							"value": "false",
+							"description": "true, false (default)",
+							"disabled": true
+						},
+						{
+							"key": "pageSize",
+							"value": "25",
+							"description": "1,2,3, etc (25 is default)",
+							"disabled": true
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

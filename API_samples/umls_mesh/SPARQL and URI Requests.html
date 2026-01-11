@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <link rel="icon"
+          type="image/ico"
+          href="images/favicon.ico">
+    <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.1.1/jquery.js"></script>
+    <script src="//code.jquery.com/ui/1.11.2/jquery-ui.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.1/js/bootstrap.min.js"></script>
+    <script type="text/javascript" src="//cdn.datatables.net/1.10.3/js/jquery.dataTables.min.js"></script>
+    <script type="text/javascript" src="//cdn.datatables.net/responsive/1.0.2/js/dataTables.responsive.min.js"></script>
+    <script type='text/javascript' src='/meshrdf/js/mesh-gh-pages.js'></script>
+
+    <title>SPARQL and URI Requests</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="">
+
+    <link data-require="bootstrap-css" data-semver="3.2.0" rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css" />
+    <link data-require="bootstrap@*" data-semver="3.2.0" rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.css" />
+    <link rel="stylesheet" href="//code.jquery.com/ui/1.11.2/themes/smoothness/jquery-ui.css" />
+    <link href="//cdn.datatables.net/1.10.3/css/jquery.dataTables.css" rel="stylesheet" />
+    <link href="//cdn.datatables.net/responsive/1.0.2/css/dataTables.responsive.css" rel="stylesheet" />
+    <link href="/meshrdf/styles/style.css" rel="stylesheet" />
+    <!-- HTML5 shim, for IE6-8 support of HTML5 elements -->
+    <!--[if lt IE 9]>
+      <script src="http://html5shim.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <script type = 'text/javascript'>
+    // there two classes of data tables.  data-table-standard (no paging) and data-table-long (includes paging)
+    $(document).ready(function() {
+        
+         $('table.data-table-standard').dataTable( {
+         "paging":   false,
+         "ordering": true,
+         "searching": false,
+         "responsive":true
+          } );
+         
+       $('table.data-table-long').dataTable( {
+         "paging":   true,
+         "ordering": true,
+         "info":     false,
+         "searching": true,
+         "responsive": true,
+         //"scrollX":true,
+         "scrollY":"300",
+         "pageLength":25
+
+          } );
+       
+       $( "#tabs" ).tabs();
+    
+      $('.dropdown-toggle').dropdown();
+    });
+
+    </script>
+  </head>
+
+<body>
+<div class="container-fluid">
+<!--header to hold banner + top navigation area -->
+  <!-- responsive design header using bootstrap css framework -->
+<div class = "row header">
+<div class="container-fluid col-md-6 col-sm-8 col-xs-12">
+   <a href="http://www.nlm.nih.gov"><img class= "nlm-logo img-responsive" alt="National Library of Medicine" src="/meshrdf/images/nih_nlmlogo_webheader.png "></a>
+</div>
+</div>
+
+
+<!-- // end header -->
+
+
+  <div class = "row">    
+      <div class = "container-fluid main-menu navbar navbar-default">
+          <div id="meshrdf-header">
+  <h1>MeSH RDF Technical Documentation</h1></div>
+<ul class="nav navbar-nav">
+  <li><a href="https://id.nlm.nih.gov/mesh/">MeSH RDF Home</a></li>
+  <li><a href="/meshrdf/index.html">Documentation Home</a></li>
+  <li><a href="https://nlmpubs.nlm.nih.gov/projects/mesh/rdf/">Download</a></li>
+  <li><a href="https://id.nlm.nih.gov/mesh/query">SPARQL Query</a></li>
+  <li><a href="/meshrdf/sparql-and-uri-requests.html">API</a></li>
+  
+  <li class="dropdown">
+    <a href="#" data-toggle="dropdown" class="dropdown-toggle">Data Model<b class="caret"></b></a>
+    <ul class="dropdown-menu">
+                                         
+      <li><a href="/meshrdf/concepts">Concepts</a></li>
+              
+      <li><a href="/meshrdf/descriptor-qualifier-pairs">Descriptor-Qualifier Pairs</a></li>
+              
+      <li><a href="/meshrdf/descriptors">Descriptors</a></li>
+                            
+      <li><a href="/meshrdf/qualifiers">Qualifiers</a></li>
+                        
+      <li><a href="/meshrdf/scrs">Supplementary Concept Records</a></li>
+                                
+      <li><a href="/meshrdf/terms">Terms</a></li>
+              
+      <li><a href="/meshrdf/tree-numbers">Tree Numbers</a></li>
+                       
+    </ul>
+  </li>
+  
+  <li class="dropdown">
+    <a href="#" data-toggle="dropdown" class="dropdown-toggle">Cheat Sheets<b class="caret"></b></a>
+    <ul class="dropdown-menu">
+                 
+      <li><a href="/meshrdf/all-class-predicate-class">All Class-Predicate-Class</a></li>
+              
+      <li><a href="/meshrdf/class-properties">All Class Properties</a></li>
+              
+      <li><a href="/meshrdf/classes">Class Definitions</a></li>
+                                            
+      <li><a href="/meshrdf/predicates">Predicate Definitions</a></li>
+                        
+      <li><a href="/meshrdf/sample-queries">Sample Queries</a></li>
+                      
+      <li><a href="/meshrdf/sparql-and-uri-requests">SPARQL and URI Requests</a></li>
+                
+      <li><a href="/meshrdf/super-classes">Super Classes</a></li>
+                                       
+    </ul>
+  </li>
+  
+  <li class="dropdown">
+    <a href="#" data-toggle="dropdown" class="dropdown-toggle">Policy<b class="caret"></b></a>
+    <ul class="dropdown-menu">
+         
+      <li><a href="/meshrdf/acceptable-use-policy">Acceptable Use Policy</a></li>
+                                                                                                                                      
+      <li><a href="/meshrdf/versioning-policy">Versioning Policy</a></li>
+                 
+    </ul>
+  </li>
+  
+  <li><a href="/meshrdf/release-notes">Release Notes</a></li>
+</ul>
+ 
+      </div>
+   </div>
+    
+<!-- breadcrumbs (removed)
+    
+    <ol class = "breadcrumb col-md-6 col-sm-6 col-xs-10">
+        <li><a href = "/meshrdf/index.html">Documentation Home</a></li>
+        <li class = "active">SPARQL and URI Requests</li>
+    </ol>
+    
+    
+    -->
+<!-- //end breadcrumbs -->
+    <div class = "row">
+      <div class = "container-fluid col-md-10 col-sm-10 col-xs-10 main-content">
+        <h2>SPARQL and URI Requests</h2>
+        <h3 id="sparql-endpoint-requests">SPARQL Endpoint Requests</h3>
+
+<p>Our SPARQL endpoint has the following base URL: http://id.nlm.nih.gov/mesh/sparql. All SPARQL query requests for data should be sent to the SPARQL endpoint. We also offer a <a href="http://id.nlm.nih.gov/mesh/query">SPARQL query editor</a> for writing and running SPARQL queries in a web browser. Queries run against our SPARQL endpoint or from our SPARQL query editor will produce persistent, shareable URLs. Build SPARQL endpoint requests by appending the following parameters to the base URL: http://id.nlm.nih.gov/mesh/sparql.</p>
+
+<table class="data-table-standard row-border hover">
+  <thead>
+    <tr>
+      <th>Parameter</th>
+      <th>Valid Values (SELECT Queries)</th>
+      <th>Valid Values (CONSTRUCT Queries)</th>
+      <th>Default Value</th>
+      <th>Use Case</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>limit</td>
+      <td>Accepts positive integers up to 1000</td>
+      <td>N/A</td>
+      <td>1000</td>
+      <td>Limits the number of results per request. The maximum number of results per request for SELECT queries is 1,000. This parameter does not affect CONSTRUCT queries. CONSTRUCT queries will return all triples requested up to a limit of 10,000 triples.</td>
+    </tr>
+    <tr>
+      <td>offset</td>
+      <td>Accepts positive integers</td>
+      <td>N/A</td>
+      <td>0</td>
+      <td>When offset=n, this parameter will return results starting with the nth result. Use this parameter to loop through multiple requests for large result sets.</td>
+    </tr>
+    <tr>
+      <td>inference</td>
+      <td>Accepts true or false</td>
+      <td>Accepts true or false</td>
+      <td>false</td>
+      <td>Running a query with inference set to “true” will return results for all subclasses and subproperties of those classes and properties you specify in your query. For example, there are no direct instances of meshv:Descriptor, but if you run a query with inference and look for rdf:type meshv:Descriptor, you will get all instances of meshv:Descriptor’s subclasses - meshv:TopicalDescriptor, meshv:GeographicalDescriptor, meshv:PublicationType and meshv:CheckTag. Running a query with inference=true may affect performance.</td>
+    </tr>
+    <tr>
+      <td>format</td>
+      <td>Accepts HTML*, XML, CSV, TSV or JSON</td>
+      <td>Accepts HTML*, XML, JSON-LD, RDF/XML, TURTLE or N3</td>
+      <td>HTML*</td>
+      <td>Returns a file with the specified syntax.</td>
+    </tr>
+    <tr>
+      <td>year</td>
+      <td>Accepts “current” or a year.</td>
+      <td>Accepts “current” or a year.</td>
+      <td>current</td>
+      <td>Queries either the current MeSH graph (<a href="http://id.nlm.nih.gov/mesh">http://id.nlm.nih.gov/mesh</a>) or a versioned MeSH graph, for example: (<a href="http://id.nlm.nih.gov/mesh/2015">http://id.nlm.nih.gov/mesh/2015</a>).</td>
+    </tr>
+    <tr>
+      <td>query</td>
+      <td>Accepts a SELECT SPARQL query</td>
+      <td>Accepts a CONSTRUCT SPARQL query</td>
+      <td>N/A</td>
+      <td>This parameter is required and must contain a SPARQL query. For an example of how these are formatted, run a query from the <a href="http://id.nlm.nih.gov/mesh/query">SPARQL query editor</a> and view the resulting URL.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>*Note that only the SPARQL query editor (http://id.nlm.nih.gov/mesh/query) will accept HTML as a format. The SPARQL endpoint will return an error if you request format=HTML.</p>
+
+<h3 id="uri-data-requests">URI Data Requests</h3>
+
+<p>The table below describes URL patterns and Accept Headers that applications can use to retrieve MeSH linked data from URIs in various formats. Users can also append the format to the end of the URI (e.g.: D000900.html) to specify the desired return format.</p>
+
+<p>All URLs assume the prefix http://id.nlm.nih.gov/</p>
+
+<table class="data-table-long row-border hover">
+  <thead>
+    <tr>
+      <th>URL</th>
+      <th>Accept Header</th>
+      <th>Return Format</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>mesh/D000900</td>
+      <td>text/html</td>
+      <td>html</td>
+    </tr>
+    <tr>
+      <td><a href="http://id.nlm.nih.gov/mesh/D000900.html" target="_blank">mesh/D000900.html</a></td>
+      <td> </td>
+      <td>html</td>
+    </tr>
+    <tr>
+      <td>mesh/D000900</td>
+      <td>application/rdf+xml</td>
+      <td>rdf</td>
+    </tr>
+    <tr>
+      <td><a href="http://id.nlm.nih.gov/mesh/D000900.rdf" target="_blank">mesh/D000900.rdf</a></td>
+      <td> </td>
+      <td>rdf</td>
+    </tr>
+    <tr>
+      <td>mesh/D000900</td>
+      <td>application/rdf+n3</td>
+      <td>n3</td>
+    </tr>
+    <tr>
+      <td><a href="http://id.nlm.nih.gov/mesh/D000900.n3" target="_blank">mesh/D000900.n3</a></td>
+      <td> </td>
+      <td>n3</td>
+    </tr>
+    <tr>
+      <td>mesh/D000900</td>
+      <td>application/rdf+x-turtle</td>
+      <td>turtle</td>
+    </tr>
+    <tr>
+      <td><a href="http://id.nlm.nih.gov/mesh/D000900.ttl" target="_blank">mesh/D000900.ttl</a></td>
+      <td> </td>
+      <td>turtle</td>
+    </tr>
+    <tr>
+      <td>mesh/D000900</td>
+      <td>application/rdf+json</td>
+      <td>json</td>
+    </tr>
+    <tr>
+      <td><a href="http://id.nlm.nih.gov/mesh/D000900.json" target="_blank">mesh/D000900.json</a></td>
+      <td> </td>
+      <td>json</td>
+    </tr>
+  </tbody>
+</table>
+
+      </div>
+    </div>
+<!-- footer area   -->
+<div class = "row">
+<div class = "container-fluid footer col-md-12 col-sm-12 col-xs-12">
+    <div id = "footer">
+  Page first published: 01 Nov 2014<br/>
+  Page last updated: 07 Dec 2021
+</div>
+<!-- Google Tag Manager -->
+<noscript><iframe src="//www.googletagmanager.com/ns.html?id=GTM-MT6MLL"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'//www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-MT6MLL');</script>
+<!-- End Google Tag Manager -->
+
+</div>
+</div>
+<!-- //end footer -->
+  
+</div>
+</body>
+</html>

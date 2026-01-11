@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <link rel="stylesheet" href="https://www.nlm.nih.gov/home_assets/v5/css/nlm_main.css">
+  <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,400i,500,500i,700,900" rel="stylesheet">
+  <link rel="schema.DC" href="http://purl.org/dc/elements/1.1/" title="The Dublin Core metadata Element Set" />
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.10/css/all.css" integrity="sha384-+d0P83n9kaQMCwj8F4RJB66tzIwOKmrdb46+porD/OvrJ+37WqIM7UoBtwHO6Nlg" crossorigin="anonymous">
+  <link href="css/local-uts.css?20240819a" rel="stylesheet" type="text/css">
+  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
+  <title>
+      UMLS API Interactive Interface
+      
+  </title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="DC.Title" content="UMLS API Interactive Interface" />
+  <meta name="DC.Publisher" content="U.S. National Library of Medicine" />
+  <meta name="DC.Subject.Keyword" content="Unified Medical Language System API, UMLS REST API, UMLS API, Terminology Service, Biomedical Terminology Endpoint">
+  <meta name="DC.Rights" content="Public Domain" />
+  <meta name="DC.Language" content="eng" />
+  <meta name="generator" content="JBake">
+  <meta name="NLM.Contact.Email" content="nlmumlscustserv@mail.nlm.nih.gov" />
+      <!-- Google Tag Manager -->
+  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'//www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-MT6MLL');</script>
+      <!-- End Google Tag Manager -->
+</head>
+
+<body onload="prettyPrint();hljs.initHighlighting();">
+  <noscript><iframe src="//www.googletagmanager.com/ns.html?id= GTM-MT6MLL " height="0" width="0" style="display:none;visibility:hidden" title="googletagmanager"></iframe></noscript>
+  <header>
+      <div class="container-fluid">
+    <div class="container branding">
+      <div class="row container">
+        <div class="col-lg-4 col-md-6 col-sm-6 col-xs-12 pb-md-0 pb-2">
+      <a href="https://www.nlm.nih.gov/"><img src="/images/NIH_National-Library-of-Medicine_blue-grey.png" class="img-fluid" alt="NLM logo"></a>
+        </div>
+      </div>  
+    </div>  
+  </div>  
+  </header>   
+
+<div id="barbranding">
+<div class="container">
+<div class="row text-white pt-3 pb-2">
+<div class="col breadcrumb-brand">
+<div class="floating-s">
+<h4 class="text-white">UMLS API Technical Documentation</h4>
+</div>
+<div class="floating-e">
+<ul class="ps-0">
+
+<li class="list-inline-item"><a class="text-white" href="/umls-api-interactive.html" title="Get Your API Key"><strong>Interactive API Interface</strong></a>&nbsp;&nbsp;|</li>
+
+<li class="list-inline-item"><a class="text-white" href="//uts.nlm.nih.gov/uts/profile" title="Get Your API Key"><strong>Get Your API Key</strong></a>&nbsp;&nbsp;|</li>
+   
+<li class="list-inline-item"><a class="text-white" href="//support.nlm.nih.gov/support/create-case/" title="Unified Medical Language System Support" id="anch_31"><strong>Customer Support</strong></a>&nbsp;&nbsp;</li>
+
+</ul></div> <!-- 1 --> 
+
+
+ </div> <!-- 2 -->
+  
+
+</div> <!-- 3 --></div></div></div>
+    <div class="container-fluid bg-secondary">
+      <div class="container pl-0 pl-lg-3">
+        <nav class="navbar navbar-expand-lg navbar-light">
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation"> <span class="navbar-toggler-icon"></span> </button>
+          <div class="collapse navbar-collapse" id="navbarNavDropdown">
+            <ul class="navbar-nav">
+                    <li class="navitem">
+                      <a class="nav-link" href="rest/home.html">UMLS API Home</a>
+                    </li>
+                    <li class="navitem">
+                      <a class="nav-link" href="rest/authentication.html">User Authentication</a>
+                    </li>
+                    <li class="navitem">
+                      <a class="nav-link" href="rest/search/index.html">Searching the UMLS</a>
+                    </li>
+                <li>
+                <div class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="products_services" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Retrieving UMLS Data</a>
+                    <div class="dropdown-menu dropdown-menu-right ml-xl-5">
+                            <a class="dropdown-item" href="rest/concept/index.html">Retrieving UMLS Concept Information</a>
+                            <a class="dropdown-item" href="rest/definitions/index.html">Retrieving UMLS Concept Definitions</a>
+                            <a class="dropdown-item" href="rest/relations/index.html">Retrieving UMLS Concept Relations</a>
+                            <a class="dropdown-item" href="rest/atoms/index.html">Retrieving UMLS Atoms</a>
+                            <a class="dropdown-item" href="rest/atoms/parents-and-children/index.html">Retrieving UMLS Atom Parents and Children</a>
+                            <a class="dropdown-item" href="rest/atoms/ancestors-and-descendants/index.html">Retrieving UMLS Atom Ancestors and Descendants</a>
+                            <a class="dropdown-item" href="rest/semantic-network/index.html">Retrieving Semantic Type Information</a>
+                            <a class="dropdown-item" href="rest/vocabularies/index.html">Retrieving UMLS Vocabulary Metadata</a>
+                    </div>  
+            	</div>
+                </li>
+                <li>
+                <div class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="products_services" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Retrieving Source-Asserted Data</a>
+                    <div class="dropdown-menu dropdown-menu-right ml-xl-5">
+                            <a class="dropdown-item" href="rest/source-asserted-identifiers/index.html">Retrieving Source-Asserted Information</a>
+                            <a class="dropdown-item" href="rest/parents-and-children/index.html">Retrieving Source-Asserted Parents and Children</a>
+                            <a class="dropdown-item" href="rest/ancestors-and-descendants/index.html">Retrieving Source-Asserted Ancestors and Descendants</a>
+                            <a class="dropdown-item" href="rest/source-asserted-identifiers/relations/index.html">Retrieving Source-Asserted Relations</a>
+                            <a class="dropdown-item" href="rest/source-asserted-identifiers/attributes/index.html">Retrieving Source-Asserted Attributes</a>
+                            <a class="dropdown-item" href="rest/source-asserted-identifiers/crosswalk/index.html">Crosswalking Vocabularies Using CUIs</a>
+                    </div>  
+            	</div>
+                </li>
+                <li>
+                <div class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="products_services" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">REST API Cookbook</a>
+                    <div class="dropdown-menu dropdown-menu-right ml-xl-5">
+                            <a class="dropdown-item" href="rest/rest-api-cookbook/postman.html">API Samples in Postman</a>
+                            <a class="dropdown-item" href="rest/rest-api-cookbook/python-scripts.html">Python Scripts</a>
+                            <a class="dropdown-item" href="rest/rest-api-cookbook/search-terms-from-vocabularies.html">Searching terms from a vocabulary</a>
+                            <a class="dropdown-item" href="rest/rest-api-cookbook/crosswalk.html">Crosswalking Vocabularies Using CUIs</a>
+                    </div>  
+            	</div>
+                </li>
+            </ul>
+          </div>
+        </nav>
+      </div>
+    </div>
+<div class="container-fluid uts-breadcrumbs">
+<div class="container">
+	<div id = "breadcrumb-div">
+<p>
+  <a href = "https://www.nlm.nih.gov/research/umls">UMLS Home</a> &raquo; <a href = "/rest/home.html">UMLS REST API </a> &raquo; <b>UMLS API Interactive Interface</b>
+</p>
+	</div>
+	
+	</div>
+</div>
+	<div class = "container-fluid">
+        <div class = "container uts-container">
+
+		
+	<h1>UMLS API Interactive Interface</h1>
+	<div class="umls-app">
+    <div class="umls-app__container two-column">
+        <div class="column-left">
+            <div class="umls-app__search-field-wrapper">
+                <input type="search" id="query" name="query" class="umls-app__input umls-app__search-input" placeholder="Enter a search term" autocomplete="off" required>
+                <button type="button" class="umls-app__button umls-app__search-button">Search</button>
+            </div>
+            <div class="umls-app__examples" aria-label="Example searches">
+                <p class="umls-app__examples-inline" style="margin:0 0 0 0rem; text-align:left;"><small>Try: <a href="#" class="umls-app__example-link" data-search-example="Alzheimer's Disease">Alzheimer's Disease</a> | <a href="#" class="umls-app__example-link" data-search-example="Ofloxacin">Ofloxacin</a> | <a href="#" class="umls-app__example-link" data-search-example="COVID-19" data-sabs="SNOMEDCT_US">COVID-19</a></small></p>
+            </div>
+            <label for="return-id-type" class="umls-app__label">Return ID Type</label>
+            <select id="return-id-type" class="umls-app__select">
+                <option value="concept">Concept (default)</option>
+                <option value="code">Code</option>
+            </select>
+            <div id="vocab-container" class="umls-app__vocab-container hidden">
+                <label class="umls-app__label">Vocabularies:</label>
+                <label><input type="checkbox" value="LNC" checked> LNC</label>
+                <label><input type="checkbox" value="MSH" checked> MSH</label>
+                <label><input type="checkbox" value="RXNORM" checked> RXNORM</label>
+                <label><input type="checkbox" value="SNOMEDCT_US" checked> SNOMEDCT_US</label>
+            </div>
+            <label for="api-key" class="umls-app__label"><a href="https://uts.nlm.nih.gov/uts/profile" target="_blank">API Key</a></label>
+            <input type="password" id="api-key" name="api-key" class="umls-app__input" placeholder="Enter your UMLS API key"
+                value="API_KEY_HERE" autocomplete="new-password" required>
+            <p id="api-key-error" class="api-key-error hidden"></p>
+        </div>
+        <div class="column-right">
+            <p>This interface is designed to help you learn to use the UMLS API.</p>
+            <p>Enter your <a href="https://uts.nlm.nih.gov/uts/profile" target="_blank">API key</a> and try a few searches.</p>
+            <p>Click "Raw Data" to see the raw json data returned by the API.</p>
+            <p>Check "Request URL" to see the exact URL pattern for any given request.</p>
+            <p>Click the links in results to explore the different endpoints included in the UMLS API.</p>
+        </div>
+    </div>
+    <!-- Results displayed full width below -->
+    <div class="umls-app__results hidden" id="results">
+        <div class="results-inner">
+            <div class="umls-app__recent-request hidden" id="recent-request">
+                <h3 id="recent-request-label" class="umls-app__recent-request-header"></h3>
+                <dl class="umls-app__request-details">
+                    <dt>Request URL:</dt>
+                    <dd id="recent-request-output"></dd>
+                    <dt>Documentation:</dt>
+                    <dd><a id="recent-doc-link" href="https://documentation.uts.nlm.nih.gov/rest/home.html" target="_blank">https://documentation.uts.nlm.nih.gov/rest/home.html</a></dd>
+                </dl>
+            </div>
+            <div id="spinner" class="spinner hidden"></div>
+            <details id="raw-data-details" class="raw-data-details hidden">
+                <summary>Raw Data</summary>
+                <pre id="output"></pre>
+            </details>
+            <p id="no-results-message" class="hidden">No Results</p>
+              <div class="pagination-controls hidden">
+                <button class="pagination-btn prev-page" disabled>Previous</button>
+                <span class="page-range"></span>
+                <button class="pagination-btn next-page" disabled>Next</button>
+              </div>
+              <table id="info-table" class="umls-app__table hidden">
+                <thead>
+                    <tr>
+                        <th>UI</th>
+                        <th>Name</th>
+                        <th id="root-source-header" style="display: none;">Root Source</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+              <div class="pagination-controls hidden">
+                <button class="pagination-btn prev-page" disabled>Previous</button>
+                <span class="page-range"></span>
+                <button class="pagination-btn next-page" disabled>Next</button>
+              </div>
+              <a href="#" class="try-another-search hidden" onclick="document.querySelector('.umls-app__container.two-column').scrollIntoView({ behavior: 'smooth', block: 'start' }); return false;">Try another search &#11014;&#65039;</a>
+        </div>
+    </div>
+</div>
+<script type="module">
+    import { searchUMLS } from './js/api.js';
+    import './js/init.js';
+
+    const button = document.querySelector('.umls-app__button');
+    button.addEventListener('click', () => searchUMLS());
+</script>
+	        <div id = "uts-notice">
+        <p>We welcome your feedback on our <a href = "http://support.nlm.nih.gov/support/create-case/">customer service form</a>. Please use &quot;UMLS REST API feedback&quot; in your subject line.</p>
+        <p>Check out the <a href = "/rest/rest-api-cookbook/postman.html">Postman sample collection</a> to help you get started using the UMLS REST API.</p>
+        <p><a href="/terms-of-service.html">API Terms of Service</a></p>
+	</div>
+	</div>
+	</div>
+<footer class="bg-primary text-white insertfooter"><div class="container-fluid">
+  <div class="container pt-5">
+    <div class="row mt-3">
+      <div class="col-md-3 col-sm-6 col-6">
+        <p class="text-white"><a href="https://www.nlm.nih.gov/socialmedia/index.html" class="text-white">Connect with NLM</a></p>
+        <ul class="list-inline social_media">
+          <li class="margin-right-05 list-inline-item"><a href="https://www.facebook.com/nationallibraryofmedicine" title="External link: please review our privacy policy."><img class="bg-secondary" src="https://www.nlm.nih.gov/images/facebook.svg" alt="Facebook"></a></li>
+          <li class="margin-right-05 list-inline-item"><a title="External link: please review our privacy policy." href="https://www.linkedin.com/company/national-library-of-medicine-nlm/"><img class="bg-secondary" src="//www.nlm.nih.gov/images/linkedin.svg" alt="LinkedIn"></a></li>
+          <li class="margin-right-05 list-inline-item"><a title="External link: please review our privacy policy." href="https://twitter.com/NLM_NIH"><img src="https://www.nlm.nih.gov/images/twitter.svg" class="padding-1 bg-secondary" alt="Twitter"></a></li>
+          <li class="margin-right-05 list-inline-item"><a title="External link: please review our privacy policy." href="https://www.youtube.com/user/NLMNIH"><img src="//www.nlm.nih.gov/images/youtube.svg" class="bg-secondary" alt="You Tube"></a></li>
+        </ul>
+      </div>
+      <div class="col-md-3 col-sm-6 col-6">
+        <p class="address_footer text-white"> National Library of Medicine <br>
+          <a href="https://www.google.com/maps/place/8600+Rockville+Pike,+Bethesda,+MD+20894/@38.9959508,-77.101021,17z/data=!3m1!4b1!4m5!3m4!1s0x89b7c95e25765ddb:0x19156f88b27635b8!8m2!3d38.9959508!4d-77.0988323" class="text-white" id="anch_454"> 8600 Rockville Pike <br>
+          Bethesda, MD 20894 </a></p>
+      </div>
+      <div class="col-md-3 col-sm-6 col-6">
+        <p><a href="https://www.hhs.gov/vulnerability-disclosure-policy/index.html"class="text-white"> HHS Vulnerability Disclosure </a><br>
+        <a href="https://www.nlm.nih.gov/web_policies.html" class="text-white" id="anch_455"> Web Policies </a><br>
+          <a href="https://www.nih.gov/institutes-nih/nih-office-director/office-communications-public-liaison/freedom-information-act-office" class="text-white" id="anch_456"> FOIA </a> <br>
+      </div>
+      <div class="col-md-3 col-sm-6 col-6">
+        <p><a class="supportLink text-white" href="//support.nlm.nih.gov?from=https://documentation.uts.nlm.nih.gov/" id="anch_458"> NLM Support Center </a> <br>
+          <a href="https://www.nlm.nih.gov/accessibility.html" class="text-white" id="anch_459"> Accessibility </a><br>
+          <a href="https://www.nlm.nih.gov/careers/jobopenings.html" class="text-white" id="anch_460"> Careers </a></p>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-lg-12">
+        <p class="mt-2 text-center"> <a class="text-white" href="//www.nlm.nih.gov/" id="anch_461">NLM</a> | <a class="text-white" href="https://www.nih.gov/" id="anch_462">NIH</a> | <a class="text-white" href="https://www.hhs.gov/" id="anch_463">HHS</a> | <a class="text-white" href="https://www.usa.gov/" id="anch_464">USA.gov</a></p>
+      </div>
+    </div>
+  </div> 
+</div>
+</footer>
+
+<script src="//www.nlm.nih.gov/home_assets/v5/js/bootstrap.bundle.min.js"></script>
+<script src="//assets.nlm.nih.gov/jquery/jquery-latest.min.js"></script>
+<script src="//assets.nlm.nih.gov/jquery/jquery-migrate-latest.min.js"></script>
+<script src="//www.nlm.nih.gov/scripts/home.js"></script>
+ <script src="js/mrrank-data.js"></script>
+ <script type="module" src="js/main.js"></script>
+
+  </body>
+</html>

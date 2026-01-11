@@ -43,71 +43,112 @@ class ExtractedKeywords(BaseModel):
 
 SUBCONCEPT_EXTRACTION_PROMPT = """You are a medical literature search expert preparing a comprehensive systematic review search strategy.
 
-Analyze the research question and extract search concepts organized by PICO framework. 
-**IMPORTANT**: Within each PICO category, identify DISTINCT sub-concepts that should be AND'd together in the search.
+Analyze the research question and extract search concepts organized by the PICO framework.
+**IMPORTANT**: You must distinguish between the "Core Entity" (the disease/anatomy) and its "Modifiers" (state/severity/demographic).
 
 ## PICO Framework:
-- **Population (P)**: Patient group, condition, disease, demographics, age groups
-- **Intervention (I)**: Treatment, therapy, exposure, drug, procedure being studied  
-- **Comparison (C)**: Control group, placebo, alternative treatment, standard care
-- **Outcome (O)**: Results measured, endpoints, effects, symptoms
+- **Population (P)**: Patient group, condition, disease.
+- **Intervention (I)**: Treatment, drug, procedure.
+- **Comparison (C)**: Control group, placebo (often implied).
+- **Outcome (O)**: Clinical measurements or endpoints.
 
-## Sub-Concept Rules:
-1. Each sub-concept represents ONE distinct aspect of the search
-2. Sub-concepts within a category will be AND'd together
-3. For each sub-concept, provide:
-   - "name": A short descriptive label
-   - "original_term": **MUST BE A SINGLE WORD** - the core medical/scientific term (best for MeSH/UMLS database lookup)
-   - "expanded_terms": Multi-word phrases, synonyms, related terms, abbreviations, alternative spellings
+## Extraction Rules:
+1. **Separation of Modifiers**: 
+   - Extract the **noun phrase** as the `core_concept` (e.g., "Thyroid Eye Disease").
+   - Extract adjectives limiting the scope as `modifier` (e.g., "active", "severe", "pediatric").
+   - *Reason:* We expand the core concept using medical dictionaries but strict-match the modifier.
 
-**CRITICAL**: The "original_term" MUST be a single word (e.g., "pediatrics" not "pediatric patients"). 
-Multi-word expressions go in "expanded_terms".
+2. **Neutralize Outcomes (Avoid Bias)**:
+   - Extract the clinical entity measured as `core_concept` (e.g., "Proptosis", "Pain").
+   - Extract the change or movement as `direction_of_effect` (e.g., "reduction", "increase", "prevention").
+   - *Reason:* We must search for the outcome itself, regardless of whether it increased or decreased.
 
-## Example:
-Question: "Does propranolol reduce migraine frequency in pediatric patients under the age of 12?"
+3. **Atomic Entities**: 
+   - Keep multi-word medical terms together in `core_concept` if they define a single entity (e.g., "Heart Attack", "Thyroid Eye Disease").
+   - Do NOT split these into "Thyroid" and "Eye" and "Disease".
+
+4. **No Abbreviations**: 
+   - Expand all abbreviations in `core_concept` (e.g., use "Myocardial Infarction", not "MI").
+
+5. **Separate Routes of Administration** (CRITICAL for drugs):
+   - Drug CLASS goes in `core_concept` (e.g., "Steroids", "Antibiotics", "Glucocorticoids").
+   - Route of administration goes in `modifier` (e.g., "intravenous", "oral", "topical", "intramuscular").
+   - NEVER include route in core_concept (e.g., "intravenous steroids" → core: "Steroids", modifier: "intravenous").
+
+## JSON Output Structure:
+For each item in a PICO category, provide:
+- "name": A short descriptive label
+- "core_concept": The main medical entity (Noun phrase) - REQUIRED
+- "modifier": Any adjective constraining the concept (Population/Intervention only, optional)
+- "direction_of_effect": Any term indicating increase/decrease/change (Outcome only, optional)
+- "explanation": Brief reasoning
+
+## Example 1:
+Question: "Is teprotumumab effective in reducing proptosis for active thyroid eye disease compared to intravenous steroids?"
 
 ```json
 {{
   "population": [
     {{
-      "name": "age_group",
-      "original_term": "pediatrics",
-      "expanded_terms": ["pediatric patients", "children", "child", "paediatric", "kids", "minors"]
-    }},
-    {{
-      "name": "age_limit",
-      "original_term": "adolescent",
-      "expanded_terms": ["under 12", "age < 12", "younger than 12", "below 12 years", "under twelve"]
+      "name": "disease",
+      "core_concept": "Thyroid Eye Disease",
+      "modifier": "active",
+      "explanation": "Core disease is TED; active is the specific disease state to filter by."
     }}
   ],
   "intervention": [
     {{
       "name": "drug",
-      "original_term": "propranolol",
-      "expanded_terms": ["inderal", "beta blocker", "beta-blocker", "propranolol hydrochloride"]
+      "core_concept": "teprotumumab",
+      "modifier": null,
+      "explanation": "Specific drug name."
     }}
   ],
-  "comparison": [],
+  "comparison": [
+    {{
+      "name": "comparator_drug",
+      "core_concept": "Steroids",
+      "modifier": "intravenous",
+      "explanation": "The drug CLASS is Steroids (core); intravenous is ROUTE OF ADMINISTRATION (modifier). Never include route in core_concept!"
+    }}
+  ],
   "outcome": [
     {{
-      "name": "condition",
-      "original_term": "migraine",
-      "expanded_terms": ["migraine headache", "migrainous", "hemicrania", "migraine attacks"]
-    }},
-    {{
-      "name": "measurement",
-      "original_term": "frequency",
-      "expanded_terms": ["reduce frequency", "decrease frequency", "prevention", "prophylaxis", "attack rate"]
+      "name": "clinical_measurement",
+      "core_concept": "proptosis",
+      "direction_of_effect": "reduction",
+      "explanation": "The clinical presentation is proptosis; reduction is the biased outcome direction (will be ignored)."
     }}
   ],
   "other": []
 }}
 ```
 
-This produces the query logic:
-- Population: (pediatrics OR pediatric patients OR children...) AND (adolescent OR under 12...)
-- Intervention: (propranolol OR inderal OR beta blocker...)
-- Outcome: (migraine OR migraine headache...) AND (frequency OR reduce frequency...)
+## Example 2:
+Question: "Management of pediatric patients with acute asthma exacerbation"
+
+```json
+{{
+  "population": [
+    {{
+      "name": "condition",
+      "core_concept": "Asthma",
+      "modifier": "acute exacerbation",
+      "explanation": "Core condition with severity modifier."
+    }},
+    {{
+      "name": "demographic",
+      "core_concept": "Pediatrics",
+      "modifier": null,
+      "explanation": "Age demographic group."
+    }}
+  ],
+  "intervention": [],
+  "comparison": [],
+  "outcome": [],
+  "other": []
+}}
+```
 
 ## Research Question:
 {question}
@@ -272,15 +313,23 @@ class KeywordExtractor:
                 
                 for item in cat_data:
                     if isinstance(item, dict):
+                        # NEW format with core_concept/modifier/direction_of_effect
+                        core = item.get("core_concept", item.get("original_term", ""))
                         sub_concepts.append(SubConcept(
                             name=item.get("name", "unknown"),
-                            original_term=item.get("original_term", ""),
+                            core_concept=core,
+                            modifier=item.get("modifier"),
+                            direction_of_effect=item.get("direction_of_effect"),
+                            explanation=item.get("explanation"),
+                            # Legacy fields for backward compatibility
+                            original_term=core,  # Map core_concept to original_term
                             expanded_terms=item.get("expanded_terms", [])
                         ))
                     elif isinstance(item, str):
                         # Legacy format - single term
                         sub_concepts.append(SubConcept(
                             name=item,
+                            core_concept=item,
                             original_term=item,
                             expanded_terms=[]
                         ))

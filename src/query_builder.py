@@ -65,10 +65,12 @@ class PubMedAdapter(DatabaseAdapter):
     
     def format_text_term(self, term: str) -> str:
         quoted = self.quote_if_needed(term)
-        # Use proximity search for multi-word phrases when enabled (PubMed feature)
-        # Only add ~N syntax when proximity_distance > 0
-        if ' ' in term and self.proximity_distance > 0:
-            return f"{quoted}[tiab:~{self.proximity_distance}]"
+        # Use proximity search ONLY for multi-word phrases (2+ words)
+        # Correct syntax is [Title/Abstract:~N]
+        # Single words MUST use [tiab] - proximity on single words is invalid!
+        words = term.strip().split()
+        if len(words) >= 2 and self.proximity_distance > 0:
+            return f"{quoted}[Title/Abstract:~{self.proximity_distance}]"
         return f"{quoted}[tiab]"
     
     def combine_or(self, terms: List[str]) -> str:
@@ -302,25 +304,28 @@ class QueryBuilder:
         adapter: DatabaseAdapter
     ) -> str:
         """
-        Build a query block for a single sub-concept.
-        All terms within a sub-concept are OR'd together.
+        Build a query block for a single sub-concept using semantic decomposition.
         
-        Term tagging strategy:
-        - MeSH preferred term → [MeSH] or [MeSH:NoExp] (controlled vocabulary)
-        - MeSH entry terms → [tiab] (free text - these are synonyms, not indexed as MeSH)
-        - UMLS synonyms → [tiab] (free text)
-        - Original/expanded terms → [tiab] (free text)
+        Strategy (NEW):
+        - core_concept → EXPAND via UMLS/MeSH → OR'd together
+        - modifier → TEXT-ONLY [tiab] → AND with expanded core
+        - direction_of_effect → DISCARDED (to avoid outcome bias)
         
         Returns:
-            Query string like: (MeSH_term[MeSH] OR synonym1[tiab] OR synonym2[tiab])
+            Query string like: ((core_terms...) AND modifier[tiab])
+            or just (core_terms...) if no modifier
         """
         mesh_terms = []  # Terms to be formatted as controlled vocabulary
         text_terms = []  # Terms to be formatted as free text [tiab]
         
+        # Get the core term (prefer core_concept, fall back to original_term)
+        core_term = sub_concept.core_concept or sub_concept.original_term
+        
         # ---------------------------------------------------------------------
-        # 1. Free-text terms (original + expanded) → [tiab]
+        # 1. Core concept + expanded terms → [tiab]
         # ---------------------------------------------------------------------
-        text_terms.append(sub_concept.original_term)
+        if core_term:
+            text_terms.append(core_term)
         text_terms.extend(sub_concept.expanded_terms)
         
         # ---------------------------------------------------------------------
@@ -349,8 +354,29 @@ class QueryBuilder:
         # ---------------------------------------------------------------------
         formatted_terms = []
         
+        # Helper: Sanitize terms (remove noise)
+        def is_valid_term(term: str) -> bool:
+            """Filter out problematic terms."""
+            if not term or not term.strip():
+                return False
+            term = term.strip()
+            if len(term) < 2:
+                return False
+            if len(term) > 60:
+                return False
+            if any(x in term.lower() for x in ['product containing', 'producto que contiene', 'mg/1 vial', 'milligram/1']):
+                return False
+            return True
+        
+        def clean_term(term: str) -> str:
+            """Clean up a term."""
+            return term.strip()
+        
         # Add MeSH terms with controlled vocabulary tagging
         for mesh_term in mesh_terms:
+            mesh_term = clean_term(mesh_term)
+            if not is_valid_term(mesh_term):
+                continue
             formatted = adapter.format_mesh_term(
                 mesh_term,
                 explode=self.settings.explode_mesh_tree
@@ -359,6 +385,9 @@ class QueryBuilder:
         
         # Add text terms with [tiab] tagging
         for text_term in text_terms:
+            text_term = clean_term(text_term)
+            if not is_valid_term(text_term):
+                continue
             formatted = adapter.format_text_term(text_term)
             formatted_terms.append(formatted)
         
@@ -372,7 +401,19 @@ class QueryBuilder:
                 seen.add(t.lower())
                 unique_terms.append(t)
         
-        return adapter.combine_or(unique_terms)
+        # Build the core concepts block (OR'd)
+        core_block = adapter.combine_or(unique_terms)
+        
+        # ---------------------------------------------------------------------
+        # 6. Handle modifier (text-only, ANDed with core)
+        # Note: direction_of_effect is explicitly DISCARDED to avoid outcome bias
+        # ---------------------------------------------------------------------
+        if sub_concept.modifier and core_block:
+            modifier_term = adapter.format_text_term(sub_concept.modifier)
+            # AND the modifier with the core concepts
+            return f"({core_block} AND {modifier_term})"
+        
+        return core_block
     
     def build_pico_query(
         self,
