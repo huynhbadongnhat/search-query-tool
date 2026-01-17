@@ -1,4 +1,4 @@
-# Systematic Review Query Generator 🚀
+# Systematic Review Query Generator
 
 **An advanced tool for converting natural language research questions into comprehensive, syntax-correct search queries for systematic reviews and meta-analyses.**
 
@@ -6,7 +6,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11+-blue)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-red)
 
-## 🌟 Features
+## Features
 
 - **Standardized PICO Extraction**: Uses LLMs (via NanoGPT) to intelligently break down research questions into **P**opulation, **I**ntervention, **C**omparison, and **O**utcome.
 - **Smart Semantic Decomposition**:
@@ -24,7 +24,7 @@
     - Semantic Scholar (Relevance Search)
 - **Interactive Review**: Full control to review, edit, and select which terms to include before generation.
 
-## 🛠️ Installation
+## Installation
 
 ### Prerequisites
 - Python 3.11 or higher
@@ -76,7 +76,7 @@
     export UMLS_API_KEY="your-umls-key"
     ```
 
-## 🚀 Usage
+## Usage
 
 ### 1. Start the App
 ```bash
@@ -105,7 +105,7 @@ Toggle specific MeSH terms or UMLS synonyms on/off. You can also add your own cu
 **Step 5: Generate Queries**
 Click **Generate Final Queries** to produce syntax-specific strings for all selected databases. Copy them to your clipboard.
 
-## 📦 Building Standalone App (One-Click Run)
+## Building Standalone App (One-Click Run)
 
 You can package the app as a standalone executable (e.g., `.app` on Mac or `.exe` on Windows) for easy distribution.
 
@@ -123,7 +123,7 @@ To share the app, you must zip **two items** together:
 
 > **Important**: The `META/` folder must remain typically in the same folder as the executable for the app to find the large database files.
 
-## 🧠 Search Logic Explained
+## Search Logic Explained
 
 The tool builds queries using a robust Boolean logic designed for high sensitivity:
 
@@ -141,7 +141,7 @@ The tool builds queries using a robust Boolean logic designed for high sensitivi
 4.  **Between Categories (AND)**:
     Population, Intervention, and Outcome blocks are combined with AND.
 
-## ⚙️ Configuration
+## Configuration
 
 Check the **Settings** sidebar for advanced controls:
 
@@ -154,7 +154,7 @@ Check the **Settings** sidebar for advanced controls:
 | **Min Fuzzy Score** | How strict the synonym matching should be (50-100) | 80-90 |
 | **PubMed Proximity** | Uses `[Title/Abstract:~N]` to find words near each other | 2 |
 
-## ⚠️ Troubleshooting
+## Troubleshooting
 
 -   **"UMLS data not found"**: Ensure `MRCONSO.RRF` is exactly in the `META/` folder if using local fallback.
 -   **"MeSH XML not found"**: Ensure `desc2026.xml` is in `META/`.

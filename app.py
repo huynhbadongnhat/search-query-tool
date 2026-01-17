@@ -72,7 +72,7 @@ def fetch_nanogpt_models(api_key: str) -> list[str]:
 
 st.set_page_config(
     page_title="MeSH Search Query Tool",
-    page_icon="🔎",
+    page_icon=None,
     layout="wide"
 )
 
@@ -249,10 +249,168 @@ def test_nanogpt_connection(api_key: str) -> tuple[bool, str]:
 # =============================================================================
 
 with st.sidebar:
-    st.title("⚙️ Settings")
+    st.title("Settings")
     
-    # API Key Section
-    st.subheader("🔑 API Key")
+    # ==========================================================================
+    # 1. UMLS Data Management (Local Files)
+    # ==========================================================================
+    st.subheader("Data Management")
+    
+    if UMLS_PARQUET_PATH.exists():
+        st.success("UMLS data ready (Parquet)")
+    else:
+        if UMLS_RRF_PATH.exists():
+            st.warning("UMLS RRF found but not preprocessed")
+            if st.button("Preprocess UMLS to Parquet", use_container_width=True):
+                with st.spinner("Preprocessing UMLS data (this may take a few minutes)..."):
+                    temp_loader = UMLSLoader(rrf_path=UMLS_RRF_PATH)
+                    temp_loader.preprocess_rrf_to_parquet(UMLS_PARQUET_PATH)
+                st.success("UMLS preprocessing complete!")
+                st.rerun()
+        else:
+            st.info(f"UMLS data not found at {UMLS_RRF_PATH}")
+    
+    # Restart & Clear Cache
+    if st.button("Clear Cache & Restart", use_container_width=True, type="secondary"):
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        # Clear session state except API keys
+        keys_to_keep = {"api_key", "umls_api_key"}
+        for key in list(st.session_state.keys()):
+            if key not in keys_to_keep:
+                del st.session_state[key]
+        st.success("Cache cleared!")
+        st.rerun()
+    
+    st.divider()
+    
+    # ==========================================================================
+    # 2. Target Databases
+    # ==========================================================================
+    st.subheader("Target Databases")
+    
+    db_pubmed = st.checkbox("PubMed", value=True)
+    db_embase = st.checkbox("Embase", value=True)
+    db_cochrane = st.checkbox("Cochrane", value=True)
+    db_wos = st.checkbox("Web of Science", value=True)
+    db_scopus = st.checkbox("Scopus", value=True)
+    db_sem_scholar = st.checkbox("Semantic Scholar", value=True, help="Uses relevance search with concept keywords only")
+    
+    selected_dbs = []
+    if db_pubmed: selected_dbs.append(Database.PUBMED)
+    if db_embase: selected_dbs.append(Database.EMBASE)
+    if db_cochrane: selected_dbs.append(Database.COCHRANE)
+    if db_wos: selected_dbs.append(Database.WEB_OF_SCIENCE)
+    if db_scopus: selected_dbs.append(Database.SCOPUS)
+    if db_sem_scholar: selected_dbs.append(Database.SEMANTIC_SCHOLAR)
+    
+    st.divider()
+    
+    # ==========================================================================
+    # 3. Search Settings
+    # ==========================================================================
+    st.subheader("Search Settings")
+    
+    # Presets
+    preset = st.selectbox(
+        "Quick Preset",
+        options=["Custom", "High Sensitivity", "Balanced", "High Precision"],
+        index=1,
+        help="Choose a preset or customize settings below"
+    )
+    
+    if preset == "High Sensitivity":
+        default_mesh_pref, default_mesh_entry = True, True
+        default_explode, default_umls = True, True
+        default_fuzzy = 70
+    elif preset == "High Precision":
+        default_mesh_pref, default_mesh_entry = True, False
+        default_explode, default_umls = False, False
+        default_fuzzy = 90
+    else:  # Balanced or Custom
+        default_mesh_pref, default_mesh_entry = True, True
+        default_explode, default_umls = False, True
+        default_fuzzy = 80
+    
+    # Show options in an expander for cleaner UI
+    with st.expander("Advanced Options", expanded=(preset == "Custom")):
+        st.markdown("**MeSH Settings**")
+        
+        include_mesh_preferred = st.checkbox(
+            "Include MeSH Preferred Terms",
+            value=default_mesh_pref,
+            help="Adds official MeSH headings (e.g., 'Ascorbic Acid' for Vitamin C). "
+                 "Always recommended - these are standardized medical terms."
+        )
+        st.session_state["include_mesh_preferred"] = include_mesh_preferred
+        
+        include_mesh_entry_terms = st.checkbox(
+            "Include MeSH Entry Terms (Synonyms)",
+            value=default_mesh_entry,
+            help="Adds synonyms from MeSH (e.g., 'Vitamin C', 'L-Ascorbic Acid'). "
+                 "Enable for comprehensive searches."
+        )
+        st.session_state["include_mesh_entry_terms"] = include_mesh_entry_terms
+        
+        explode_mesh_tree = st.checkbox(
+            "Explode MeSH Tree (Include Children)",
+            value=default_explode,
+            help="Includes all narrower/child terms in the MeSH hierarchy. "
+                 "E.g., 'Heart Diseases' exploded includes 'Myocardial Infarction', etc."
+        )
+        st.session_state["explode_mesh_tree"] = explode_mesh_tree
+        
+        st.markdown("**UMLS Settings**")
+        
+        include_umls_synonyms = st.checkbox(
+            "Include UMLS Synonyms",
+            value=default_umls,
+            help="Adds synonyms from UMLS (SNOMED-CT, RxNorm, etc.) for comprehensive coverage."
+        )
+        st.session_state["include_umls_synonyms"] = include_umls_synonyms
+        
+        st.markdown("**Match Quality**")
+        
+        min_fuzzy_score = st.slider(
+            "Minimum Match Score",
+            min_value=50,
+            max_value=100,
+            value=90,
+            step=5,
+            help="Higher = stricter matching, fewer results. Lower = looser matching, more results."
+        )
+        st.session_state["min_fuzzy_score"] = min_fuzzy_score
+        
+        st.markdown("**PubMed Proximity Search**")
+        
+        proximity_distance = st.slider(
+            "Word Distance (PubMed only)",
+            min_value=0,
+            max_value=5,
+            value=2,
+            step=1,
+            help="For multi-word phrases, allows words to appear with N words between them. 0 = disabled."
+        )
+        st.session_state["proximity_distance"] = proximity_distance
+        
+        st.markdown("**Text Search**")
+        
+        include_title_abstract = st.checkbox(
+            "Search Title & Abstract",
+            value=True,
+            help="Searches in title and abstract fields. Standard practice for most searches."
+        )
+        st.session_state["include_title_abstract"] = include_title_abstract
+    
+    st.divider()
+    
+    # ==========================================================================
+    # 4. API Settings (NanoGPT + Data Source + UMLS API)
+    # ==========================================================================
+    st.subheader("API Configuration")
+    
+    # --- NanoGPT API Key ---
+    st.markdown("**NanoGPT API**")
     
     # Get current key from various sources
     current_key = get_api_key()
@@ -260,11 +418,11 @@ with st.sidebar:
     
     # Show source indicator
     if st.secrets.get("NANOGPT_API_KEY"):
-        st.caption("📍 Using key from `secrets.toml`")
+        st.caption("Using key from secrets.toml")
     elif os.environ.get("NANOGPT_API_KEY"):
-        st.caption("📍 Using key from environment variable")
+        st.caption("Using key from environment variable")
     elif saved_key_exists:
-        st.caption("📍 Using saved key from local config")
+        st.caption("Using saved key from local config")
     
     # API key input
     api_key_input = st.text_input(
@@ -282,30 +440,30 @@ with st.sidebar:
     # Save/Clear/Test buttons
     col_save, col_clear = st.columns(2)
     with col_save:
-        if st.button("💾 Save Key", use_container_width=True, disabled=not api_key_input):
+        if st.button("Save Key", use_container_width=True, disabled=not api_key_input):
             if save_api_key(api_key_input):
-                st.success("✅ Saved!")
+                st.success("Saved!")
             else:
                 st.error("Failed to save")
     
     with col_clear:
-        if st.button("🗑️ Clear", use_container_width=True, disabled=not saved_key_exists):
+        if st.button("Clear", use_container_width=True, disabled=not saved_key_exists):
             if clear_saved_api_key():
                 st.session_state["api_key"] = ""
-                st.success("✅ Cleared!")
+                st.success("Cleared!")
                 st.rerun()
     
     # Connection test button
-    if st.button("🔌 Test Connection", use_container_width=True):
+    if st.button("Test Connection", use_container_width=True):
         with st.spinner("Testing..."):
             success, message = test_nanogpt_connection(api_key_input)
             if success:
-                st.success(f"✅ {message}")
+                st.success(message)
             else:
-                st.error(f"❌ {message}")
+                st.error(message)
     
-    # Model Selection
-    st.subheader("🤖 LLM Settings")
+    # --- LLM Settings ---
+    st.markdown("**LLM Settings**")
     
     available_models = fetch_nanogpt_models(api_key_input)
     
@@ -327,7 +485,7 @@ with st.sidebar:
         st.session_state["selected_model"] = selected_model
     
     with col_refresh:
-        if st.button("🔄", help="Refresh models list"):
+        if st.button("Refresh", help="Refresh models list", key="refresh_models"):
             fetch_nanogpt_models.clear()
             st.rerun()
     
@@ -355,25 +513,21 @@ with st.sidebar:
         )
         st.session_state["top_p"] = top_p
     
-    st.divider()
-    
-    # ==========================================================================
-    # Data Source Selection
-    # ==========================================================================
-    st.subheader("📡 Data Source")
+    # --- Data Source Selection ---
+    st.markdown("**Data Source**")
     
     data_source = st.radio(
         "Term Expansion Source",
         options=["Local Files", "UMLS API"],
         index=0,
-        help="**Local:** Uses META/ folder (MeSH XML + UMLS Parquet)\n\n"
-             "**API:** Uses UMLS REST API (requires API key, no local files needed)"
+        help="Local: Uses META/ folder (MeSH XML + UMLS Parquet). "
+             "API: Uses UMLS REST API (requires API key, no local files needed)"
     )
     st.session_state["data_source"] = DataSource.LOCAL if data_source == "Local Files" else DataSource.API
     
     # UMLS API Key (only shown when API mode selected)
     if st.session_state["data_source"] == DataSource.API:
-        st.markdown("#### UMLS API Key")
+        st.markdown("**UMLS API Key**")
         
         # Load saved UMLS key
         current_umls_key = get_umls_api_key()
@@ -383,7 +537,7 @@ with st.sidebar:
             "UMLS API Key",
             type="password",
             value=current_umls_key,
-            help="Get your key from [UTS](https://uts.nlm.nih.gov/uts/)",
+            help="Get your key from UTS (https://uts.nlm.nih.gov/uts/)",
             placeholder="Enter UMLS API key..."
         )
         
@@ -393,193 +547,26 @@ with st.sidebar:
         # Save / Clear buttons
         col_save, col_clear = st.columns(2)
         with col_save:
-            if st.button("💾 Save UMLS Key", use_container_width=True, disabled=not umls_api_key):
+            if st.button("Save UMLS Key", use_container_width=True, disabled=not umls_api_key):
                 if save_umls_api_key(umls_api_key):
-                    st.success("✅ UMLS key saved!")
+                    st.success("UMLS key saved!")
                 else:
-                    st.error("❌ Failed to save key")
+                    st.error("Failed to save key")
         with col_clear:
-            if st.button("🗑️ Clear Saved", use_container_width=True, disabled=not saved_umls_key_exists):
+            if st.button("Clear UMLS Key", use_container_width=True, disabled=not saved_umls_key_exists):
                 if clear_saved_umls_api_key():
                     st.session_state["umls_api_key"] = ""
                     st.info("Key cleared")
                     st.rerun()
         
         if not umls_api_key:
-            st.warning("⚠️ UMLS API key required for API mode")
-    
-    st.divider()
-    
-    # ==========================================================================
-    # Detailed Search Settings
-    # ==========================================================================
-    st.subheader("🎯 Search Settings")
-    
-    # Presets
-    preset = st.selectbox(
-        "Quick Preset",
-        options=["Custom", "High Sensitivity", "Balanced", "High Precision"],
-        index=1,
-        help="Choose a preset or customize settings below"
-    )
-    
-    if preset == "High Sensitivity":
-        default_mesh_pref, default_mesh_entry = True, True
-        default_explode, default_umls = True, True
-        default_fuzzy = 70
-    elif preset == "High Precision":
-        default_mesh_pref, default_mesh_entry = True, False
-        default_explode, default_umls = False, False
-        default_fuzzy = 90
-    else:  # Balanced or Custom
-        default_mesh_pref, default_mesh_entry = True, True
-        default_explode, default_umls = False, True
-        default_fuzzy = 80
-    
-    # Show options in an expander for cleaner UI
-    with st.expander("🔧 Advanced Options", expanded=(preset == "Custom")):
-        st.markdown("#### MeSH Settings")
-        
-        include_mesh_preferred = st.checkbox(
-            "✅ Include MeSH Preferred Terms",
-            value=default_mesh_pref,
-            help="**What it does:** Adds official MeSH headings (e.g., 'Ascorbic Acid' for Vitamin C).\n\n"
-                 "**When to enable:** Always - these are standardized medical terms.\n\n"
-                 "**⚠️ If disabled:** May miss articles indexed with official MeSH terms."
-        )
-        st.session_state["include_mesh_preferred"] = include_mesh_preferred
-        
-        include_mesh_entry_terms = st.checkbox(
-            "📚 Include MeSH Entry Terms (Synonyms)",
-            value=default_mesh_entry,
-            help="**What it does:** Adds synonyms from MeSH (e.g., 'Vitamin C', 'L-Ascorbic Acid').\n\n"
-                 "**When to enable:** For comprehensive searches where you want to capture variations.\n\n"
-                 "**⚠️ If disabled:** May miss articles using alternative terminology."
-        )
-        st.session_state["include_mesh_entry_terms"] = include_mesh_entry_terms
-        
-        explode_mesh_tree = st.checkbox(
-            "🌳 Explode MeSH Tree (Include Children)",
-            value=default_explode,
-            help="**What it does:** Includes all narrower/child terms in the MeSH hierarchy.\n\n"
-                 "**Example:** 'Heart Diseases' exploded includes 'Myocardial Infarction', 'Arrhythmias', etc.\n\n"
-                 "**When to enable:** For high-sensitivity systematic reviews.\n\n"
-                 "**⚠️ Warning:** May significantly increase results, including less relevant articles."
-        )
-        st.session_state["explode_mesh_tree"] = explode_mesh_tree
-        
-        st.markdown("#### UMLS Settings")
-        
-        include_umls_synonyms = st.checkbox(
-            "🔤 Include UMLS Synonyms",
-            value=default_umls,
-            help="**What it does:** Adds synonyms from UMLS (Unified Medical Language System), "
-                 "which aggregates terms from SNOMED-CT, RxNorm, and other vocabularies.\n\n"
-                 "**When to enable:** For comprehensive coverage across different medical vocabularies.\n\n"
-                 "**⚠️ If disabled:** May miss articles using regional or specialized terminology."
-        )
-        st.session_state["include_umls_synonyms"] = include_umls_synonyms
-        
-        st.markdown("#### Match Quality")
-        
-        min_fuzzy_score = st.slider(
-            "Minimum Match Score",
-            min_value=50,
-            max_value=100,
-            value=90,
-            step=5,
-            help="**What it does:** Controls how closely terms must match during fuzzy search.\n\n"
-                 "**Higher (90-100):** Stricter matching, fewer but more accurate results.\n\n"
-                 "**Lower (50-70):** Looser matching, more results but potential false positives.\n\n"
-                 "**Recommended:** 90 for balanced."
-        )
-        st.session_state["min_fuzzy_score"] = min_fuzzy_score
-        
-        st.markdown("#### PubMed Proximity Search")
-        
-        proximity_distance = st.slider(
-            "Word Distance (PubMed only)",
-            min_value=0,
-            max_value=5,
-            value=2,
-            step=1,
-            help="**What it does:** For multi-word phrases, allows words to appear in any order with N words between them.\n\n"
-                 "**0:** Disabled - uses standard [tiab] tag.\n\n"
-                 "**1-5:** Allow N words between terms. E.g., distance 2 with 'heart attack' matches 'heart severe attack'.\n\n"
-                 "**Format:** Uses PubMed's [tiab:~N] syntax."
-        )
-        st.session_state["proximity_distance"] = proximity_distance
-        
-        st.markdown("#### Text Search")
-        
-        include_title_abstract = st.checkbox(
-            "📄 Search Title & Abstract",
-            value=True,
-            help="**What it does:** Searches in title and abstract fields.\n\n"
-                 "**When to enable:** Almost always - this is standard practice.\n\n"
-                 "**If disabled:** Only searches controlled vocabulary fields."
-        )
-        st.session_state["include_title_abstract"] = include_title_abstract
-    
-    st.divider()
-    
-    # Database Selection
-    st.subheader("🗄️ Target Databases")
-    
-    db_pubmed = st.checkbox("PubMed", value=True)
-    db_embase = st.checkbox("Embase", value=True)
-    db_cochrane = st.checkbox("Cochrane", value=True)
-    db_wos = st.checkbox("Web of Science", value=True)
-    db_scopus = st.checkbox("Scopus", value=True)
-    db_sem_scholar = st.checkbox("Semantic Scholar", value=True, help="Uses relevance search with concept keywords only")
-    
-    selected_dbs = []
-    if db_pubmed: selected_dbs.append(Database.PUBMED)
-    if db_embase: selected_dbs.append(Database.EMBASE)
-    if db_cochrane: selected_dbs.append(Database.COCHRANE)
-    if db_wos: selected_dbs.append(Database.WEB_OF_SCIENCE)
-    if db_scopus: selected_dbs.append(Database.SCOPUS)
-    if db_sem_scholar: selected_dbs.append(Database.SEMANTIC_SCHOLAR)
-    
-    st.divider()
-    
-    # UMLS Preprocessing
-    st.subheader("🔧 Data Management")
-    
-    if UMLS_PARQUET_PATH.exists():
-        st.success("✅ UMLS data ready (Parquet)")
-    else:
-        if UMLS_RRF_PATH.exists():
-            st.warning("⚠️ UMLS RRF found but not preprocessed")
-            if st.button("📦 Preprocess UMLS to Parquet", use_container_width=True):
-                with st.spinner("Preprocessing UMLS data (this may take a few minutes)..."):
-                    temp_loader = UMLSLoader(rrf_path=UMLS_RRF_PATH)
-                    temp_loader.preprocess_rrf_to_parquet(UMLS_PARQUET_PATH)
-                st.success("✅ UMLS preprocessing complete!")
-                st.rerun()
-        else:
-            st.info(f"ℹ️ UMLS data not found at {UMLS_RRF_PATH}")
-    
-    st.divider()
-    
-    # Restart & Clear Cache
-    st.subheader("🔄 Restart")
-    if st.button("🔄 Clear Cache & Restart", use_container_width=True, type="secondary"):
-        st.cache_data.clear()
-        st.cache_resource.clear()
-        # Clear session state except API keys
-        keys_to_keep = {"api_key", "umls_api_key"}
-        for key in list(st.session_state.keys()):
-            if key not in keys_to_keep:
-                del st.session_state[key]
-        st.success("✅ Cache cleared!")
-        st.rerun()
+            st.warning("UMLS API key required for API mode")
 
 # =============================================================================
 # Main Content
 # =============================================================================
 
-st.title("🚀 Systematic Review Query Generator")
+st.title("Systematic Review Query Generator")
 st.markdown("""
 Convert natural language research questions into comprehensive search queries 
 for multiple literature databases. **Now with sub-concept grouping for accurate AND/OR logic!**
@@ -604,7 +591,7 @@ if "clear_counter" not in st.session_state:
     st.session_state["clear_counter"] = 0
 
 # Research Question Input
-st.subheader("📝 Step 1: Enter Research Question")
+st.subheader("Step 1: Enter Research Question")
 question = st.text_area(
     "Enter your research question:",
     placeholder="e.g., Does propranolol reduce migraine frequency in children under 12?",
@@ -615,9 +602,9 @@ question = st.text_area(
 # Action Buttons
 col1, col2 = st.columns([3, 1])
 with col1:
-    extract_btn = st.button("🔍 Extract & Analyze Concepts", type="primary", use_container_width=True)
+    extract_btn = st.button("Extract & Analyze Concepts", type="primary", use_container_width=True)
 with col2:
-    st.button("🔄 Clear All", use_container_width=True, on_click=clear_all_callback)
+    st.button("Clear All", use_container_width=True, on_click=clear_all_callback)
 
 # =============================================================================
 # Step 1: Extract Sub-Concepts
@@ -641,7 +628,7 @@ if extract_btn:
             total = len(pico.all_sub_concepts())
             status.update(label=f"Extracted {total} sub-concepts!", state="complete")
             
-        st.success(f"✅ Extracted {total} sub-concepts across PICO categories!")
+        st.success(f"Extracted {total} sub-concepts across PICO categories!")
 
 # =============================================================================
 # Step 2: Review Sub-Concepts
@@ -649,7 +636,7 @@ if extract_btn:
 
 if "extracted_pico" in st.session_state:
     st.divider()
-    st.subheader("📌 Step 2: Review & Edit Sub-Concepts")
+    st.subheader("Step 2: Review & Edit Sub-Concepts")
     
     st.info("""
     **Understanding the query logic:**
@@ -661,11 +648,11 @@ if "extracted_pico" in st.session_state:
     pico = st.session_state["extracted_pico"]
     
     categories = [
-        ("🧑‍🤝‍🧑 Population (P)", "population", "Who are the patients/subjects?"),
-        ("💊 Intervention (I)", "intervention", "What treatment/exposure is being studied?"),
-        ("⚖️ Comparison (C)", "comparison", "What is it compared to?"),
-        ("📊 Outcome (O)", "outcome", "What effects are measured?"),
-        ("📎 Other", "other", "Additional search terms"),
+        ("Population (P)", "population", "Who are the patients/subjects?"),
+        ("Intervention (I)", "intervention", "What treatment/exposure is being studied?"),
+        ("Comparison (C)", "comparison", "What is it compared to?"),
+        ("Outcome (O)", "outcome", "What effects are measured?"),
+        ("Other", "other", "Additional search terms"),
     ]
     
     for cat_label, cat_key, cat_desc in categories:
@@ -725,7 +712,7 @@ if "extracted_pico" in st.session_state:
     # ==========================================================================
     
     expand_btn = st.button(
-        "🔬 Step 3: Expand with MeSH & UMLS", 
+        "Step 3: Expand with MeSH & UMLS", 
         type="primary", 
         use_container_width=True,
         help="Look up each term in MeSH and UMLS databases to find additional synonyms"
@@ -738,7 +725,7 @@ if "extracted_pico" in st.session_state:
             # ===== API Mode =====
             umls_api_key = st.session_state.get("umls_api_key", "")
             if not umls_api_key:
-                st.error("❌ UMLS API key required. Please enter it in the sidebar.")
+                st.error("UMLS API key required. Please enter it in the sidebar.")
             else:
                 with st.status("Searching UMLS API...", expanded=True) as status:
                     pico = st.session_state["extracted_pico"]
@@ -857,7 +844,7 @@ if "extracted_pico" in st.session_state:
 
 if st.session_state.get("api_search_done", False) and not st.session_state.get("expansion_done", False):
     st.divider()
-    st.subheader("🔬 Step 3b: Select Concepts for Expansion")
+    st.subheader("Step 3b: Select Concepts for Expansion")
     
     cui_candidates = st.session_state.get("cui_candidates", {})
     
@@ -866,11 +853,11 @@ if st.session_state.get("api_search_done", False) and not st.session_state.get("
         
         # Group CUIs by PICO category
         category_labels = {
-            "population": "👥 Population",
-            "intervention": "💊 Intervention", 
-            "comparison": "⚖️ Comparison",
-            "outcome": "📊 Outcome",
-            "other": "📌 Other"
+            "population": "Population",
+            "intervention": "Intervention", 
+            "comparison": "Comparison",
+            "outcome": "Outcome",
+            "other": "Other"
         }
         
         category_cuis = {cat: [] for cat in category_labels}
@@ -919,7 +906,7 @@ if st.session_state.get("api_search_done", False) and not st.session_state.get("
                     
                     # Build source/relation tag
                     sources = cui_data.get('sources', [])
-                    source_tag = "🏷️ MSH" if 'MSH' in sources else (sources[0] if sources else "")
+                    source_tag = "[MSH]" if 'MSH' in sources else (f"[{sources[0]}]" if sources else "")
                     
                     col1, col2, col3 = st.columns([5, 2, 1])
                     with col1:
@@ -940,12 +927,12 @@ if st.session_state.get("api_search_done", False) and not st.session_state.get("
                 # Show more button if there are more than 20
                 remaining = len(cuis_in_cat) - 20
                 if remaining > 0 and not show_all:
-                    if st.button(f"📋 Show {remaining} more...", key=f"show_more_{cat_key}"):
+                    if st.button(f"Show {remaining} more...", key=f"show_more_{cat_key}"):
                         st.session_state[show_all_key] = True
                         st.rerun()
         
         # Expand selected CUIs button
-        if st.button("🚀 Expand Selected Concepts", type="primary", disabled=not selected_cuis):
+        if st.button("Expand Selected Concepts", type="primary", disabled=not selected_cuis):
             umls_client = st.session_state.get("umls_client")
             pico = st.session_state["extracted_pico"]
             
@@ -1033,7 +1020,7 @@ if st.session_state.get("api_search_done", False) and not st.session_state.get("
 
 if st.session_state.get("expansion_done", False):
     st.divider()
-    st.subheader("📚 Step 4: Review Expanded Terms")
+    st.subheader("Step 4: Review Expanded Terms")
     
     pico = st.session_state.get("expanded_pico", st.session_state.get("extracted_pico"))
     settings = get_search_settings()
@@ -1085,7 +1072,7 @@ if st.session_state.get("expansion_done", False):
     st.divider()
     
     # Generate Queries Button
-    if st.button("🚀 Step 5: Generate Final Queries", type="primary", use_container_width=True):
+    if st.button("Step 5: Generate Final Queries", type="primary", use_container_width=True):
         settings = get_search_settings()
         builder = QueryBuilder(settings=settings)
         
@@ -1103,7 +1090,7 @@ if st.session_state.get("expansion_done", False):
             queries.append(query)
         
         st.session_state["queries"] = queries
-        st.success(f"✅ Generated queries for {len(queries)} databases!")
+        st.success(f"Generated queries for {len(queries)} databases!")
 
 # =============================================================================
 # Display Results
@@ -1135,7 +1122,7 @@ if "queries" in st.session_state:
         download_text += "=" * 80 + "\n\n"
     
     st.download_button(
-        label="📥 Download All Queries (TXT)",
+        label="Download All Queries (TXT)",
         data=download_text,
         file_name=f"search_queries_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
         mime="text/plain",
@@ -1143,12 +1130,12 @@ if "queries" in st.session_state:
     )
     
     st.divider()
-    st.subheader("📋 Generated Search Queries")
+    st.subheader("Generated Search Queries")
     
     for query in queries:
         db_name = db_names[query.database]
         
-        with st.expander(f"🗃️ {db_name}", expanded=True):
+        with st.expander(f"{db_name}", expanded=True):
             st.code(query.query_string, language=None)
             # Note: st.code() has a built-in copy button in the top-right corner
 
