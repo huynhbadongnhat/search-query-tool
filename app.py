@@ -2,9 +2,11 @@
 
 import streamlit as st
 import requests
+import sys
 import os
 from datetime import datetime
 from pathlib import Path
+from src.key_storage import ClearResult, clear_key, load_saved_key, save_key
 from src.models import (
     Database, DataSource, SearchSettings, SubConcept, ExtractedPICO, MeSHDescriptor
 )
@@ -77,12 +79,35 @@ st.set_page_config(
     layout="wide"
 )
 
-# Constants
-MESH_XML_PATH = Path("META/desc2026.xml")
-UMLS_RRF_PATH = Path("META/MRCONSO.RRF")
-UMLS_PARQUET_PATH = Path("META/umls_filtered.parquet")
+# =============================================================================
+# Portable Path Resolution
+# =============================================================================
 
-# API Key storage - stored in user's home directory for security
+def _get_portable_dir() -> Path:
+    """Return the directory next to the executable (or project root in dev).
+
+    In a PyInstaller build ``sys.frozen`` is set and the executable lives
+    inside the ``onedir`` output folder.  User-supplied data such as
+    ``META/`` should sit next to that executable.
+    """
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+_PORTABLE_DIR = _get_portable_dir()
+
+# Constants — resolve relative to the portable directory so that
+# frozen builds find META/ next to the executable.
+MESH_XML_PATH = _PORTABLE_DIR / "META" / "desc2026.xml"
+UMLS_RRF_PATH = _PORTABLE_DIR / "META" / "MRCONSO.RRF"
+UMLS_PARQUET_PATH = _PORTABLE_DIR / "META" / "umls_filtered.parquet"
+
+# API Key storage — session-only by default.  Persistent storage is
+# opt-in ("Remember keys on this computer") and uses the OS keychain
+# via the ``keyring`` library when available, falling back to a
+# permission-restricted plaintext file in the user's home directory.
+# Keys are **never** saved to the USB drive itself.
 CONFIG_DIR = Path.home() / ".mesh_query_tool"
 API_KEY_FILE = CONFIG_DIR / "api_key.txt"
 UMLS_API_KEY_FILE = CONFIG_DIR / "umls_api_key.txt"
@@ -91,37 +116,22 @@ UMLS_API_KEY_FILE = CONFIG_DIR / "umls_api_key.txt"
 # API Key Management
 # =============================================================================
 
+_KR_SERVICE = "MeSHSearchQueryTool"
+
+
 def load_saved_api_key() -> str:
-    """Load API key from secure local storage."""
-    try:
-        if API_KEY_FILE.exists():
-            return API_KEY_FILE.read_text().strip()
-    except Exception:
-        pass
-    return ""
+    """Load NanoGPT API key from OS keychain or plaintext fallback."""
+    return load_saved_key(_KR_SERVICE, "nanogpt", API_KEY_FILE)
 
-def save_api_key(api_key: str) -> bool:
-    """Save API key to secure local storage."""
-    try:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        API_KEY_FILE.write_text(api_key)
-        # Set file permissions to owner-only (Unix)
-        try:
-            API_KEY_FILE.chmod(0o600)
-        except Exception:
-            pass  # Windows doesn't support Unix permissions
-        return True
-    except Exception:
-        return False
 
-def clear_saved_api_key() -> bool:
-    """Remove saved API key."""
-    try:
-        if API_KEY_FILE.exists():
-            API_KEY_FILE.unlink()
-        return True
-    except Exception:
-        return False
+def save_api_key(api_key: str) -> str:
+    """Save NanoGPT API key.  Returns 'keyring', 'plaintext', or '' on failure."""
+    return save_key(_KR_SERVICE, "nanogpt", API_KEY_FILE, api_key)
+
+
+def clear_saved_api_key() -> ClearResult:
+    """Remove saved NanoGPT API key with post-deletion verification."""
+    return clear_key(_KR_SERVICE, "nanogpt", API_KEY_FILE)
 
 
 def get_secret_value(name: str) -> str:
@@ -145,41 +155,27 @@ def get_api_key() -> str:
     # 3. Environment variable
     if os.environ.get("NANOGPT_API_KEY"):
         return os.environ["NANOGPT_API_KEY"]
-    # 4. Saved local config
-    return load_saved_api_key()
+    # 4. Saved local config (only if user opted in)
+    if st.session_state.get("remember_keys", False):
+        return load_saved_api_key()
+    return ""
 
 # --- UMLS API Key Management ---
 
 def load_saved_umls_api_key() -> str:
-    """Load UMLS API key from secure local storage."""
-    try:
-        if UMLS_API_KEY_FILE.exists():
-            return UMLS_API_KEY_FILE.read_text().strip()
-    except Exception:
-        pass
-    return ""
+    """Load UMLS API key from OS keychain or plaintext fallback."""
+    return load_saved_key(_KR_SERVICE, "umls", UMLS_API_KEY_FILE)
 
-def save_umls_api_key(api_key: str) -> bool:
-    """Save UMLS API key to secure local storage."""
-    try:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        UMLS_API_KEY_FILE.write_text(api_key)
-        try:
-            UMLS_API_KEY_FILE.chmod(0o600)
-        except Exception:
-            pass
-        return True
-    except Exception:
-        return False
 
-def clear_saved_umls_api_key() -> bool:
-    """Remove saved UMLS API key."""
-    try:
-        if UMLS_API_KEY_FILE.exists():
-            UMLS_API_KEY_FILE.unlink()
-        return True
-    except Exception:
-        return False
+def save_umls_api_key(api_key: str) -> str:
+    """Save UMLS API key.  Returns 'keyring', 'plaintext', or '' on failure."""
+    return save_key(_KR_SERVICE, "umls", UMLS_API_KEY_FILE, api_key)
+
+
+def clear_saved_umls_api_key() -> ClearResult:
+    """Remove saved UMLS API key with post-deletion verification."""
+    return clear_key(_KR_SERVICE, "umls", UMLS_API_KEY_FILE)
+
 
 def get_umls_api_key() -> str:
     """Get UMLS API key from various sources."""
@@ -190,7 +186,9 @@ def get_umls_api_key() -> str:
         return secret_key
     if os.environ.get("UMLS_API_KEY"):
         return os.environ["UMLS_API_KEY"]
-    return load_saved_umls_api_key()
+    if st.session_state.get("remember_keys", False):
+        return load_saved_umls_api_key()
+    return ""
 
 # =============================================================================
 # Helper Functions
@@ -429,22 +427,33 @@ with st.sidebar:
     # 4. API Settings (NanoGPT + Data Source + UMLS API)
     # ==========================================================================
     st.subheader("API Configuration")
+
+    # --- Key persistence toggle (session-only by default) ---
+    remember_keys = st.checkbox(
+        "Remember keys on this computer",
+        value=st.session_state.get("remember_keys", False),
+        help="When enabled, API keys are stored in the OS keychain (or a "
+             "permission-restricted file in your home directory). "
+             "When disabled, keys live only in the current browser session.",
+    )
+    st.session_state["remember_keys"] = remember_keys
     
     # --- NanoGPT API Key ---
     st.markdown("**NanoGPT API**")
     
     # Get current key from various sources
     current_key = get_api_key()
-    saved_key_exists = API_KEY_FILE.exists()
+    saved_key_exists = bool(load_saved_api_key())
     
     # Show source indicator
     if get_secret_value("NANOGPT_API_KEY"):
         st.caption("Using key from secrets.toml")
     elif os.environ.get("NANOGPT_API_KEY"):
         st.caption("Using key from environment variable")
-    elif saved_key_exists:
+    elif saved_key_exists and remember_keys:
         st.caption("Using saved key from local config")
-    st.caption("Saved keys are written to a local plaintext file. Prefer environment variables or Streamlit secrets on shared machines.")
+    elif not remember_keys:
+        st.caption("Keys are session-only. Enable 'Remember keys' to persist.")
     
     # API key input
     api_key_input = st.text_input(
@@ -462,18 +471,28 @@ with st.sidebar:
     # Save/Clear/Test buttons
     col_save, col_clear = st.columns(2)
     with col_save:
-        if st.button("Save Key", width="stretch", disabled=not api_key_input):
-            if save_api_key(api_key_input):
-                st.success("Saved!")
+        if st.button("Save Key", width="stretch", disabled=not (api_key_input and remember_keys)):
+            method = save_api_key(api_key_input)
+            if method == "keyring":
+                st.success("Saved to OS keychain!")
+            elif method == "plaintext":
+                st.warning("Saved as plaintext file (OS keychain unavailable).")
             else:
                 st.error("Failed to save")
     
     with col_clear:
         if st.button("Clear", width="stretch", disabled=not saved_key_exists):
-            if clear_saved_api_key():
+            result = clear_saved_api_key()
+            if result.success:
                 st.session_state["api_key"] = ""
-                st.success("Cleared!")
+                st.success(result.message)
                 st.rerun()
+            elif result.warning:
+                st.session_state["api_key"] = ""
+                st.warning(result.message)
+                st.rerun()
+            else:
+                st.error(result.message)
     
     # Connection test button
     if st.button("Test Connection", width="stretch"):
@@ -538,14 +557,15 @@ with st.sidebar:
     # --- Data Source Selection ---
     st.markdown("**Data Source**")
     
+    # Default to UMLS API for portable mode (no local files needed)
     data_source = st.radio(
         "Term Expansion Source",
-        options=["Local Files", "UMLS API"],
+        options=["UMLS API", "Local Files (advanced/offline)"],
         index=0,
-        help="Local: Uses META/ folder (MeSH XML + UMLS Parquet). "
-             "API: Uses UMLS REST API (requires API key, no local files needed)"
+        help="API: Uses UMLS REST API (requires API key, no local files needed). "
+             "Local: Uses META/ folder (MeSH XML + UMLS Parquet)."
     )
-    st.session_state["data_source"] = DataSource.LOCAL if data_source == "Local Files" else DataSource.API
+    st.session_state["data_source"] = DataSource.LOCAL if data_source.startswith("Local") else DataSource.API
     
     # UMLS API Key (only shown when API mode selected)
     if st.session_state["data_source"] == DataSource.API:
@@ -553,8 +573,7 @@ with st.sidebar:
         
         # Load saved UMLS key
         current_umls_key = get_umls_api_key()
-        saved_umls_key_exists = UMLS_API_KEY_FILE.exists()
-        st.caption("Saved UMLS keys are written to a local plaintext file. Prefer environment variables or Streamlit secrets on shared machines.")
+        saved_umls_key_exists = bool(load_saved_umls_api_key())
         
         umls_api_key = st.text_input(
             "UMLS API Key",
@@ -570,17 +589,27 @@ with st.sidebar:
         # Save / Clear buttons
         col_save, col_clear = st.columns(2)
         with col_save:
-            if st.button("Save UMLS Key", width="stretch", disabled=not umls_api_key):
-                if save_umls_api_key(umls_api_key):
-                    st.success("UMLS key saved!")
+            if st.button("Save UMLS Key", width="stretch", disabled=not (umls_api_key and remember_keys)):
+                method = save_umls_api_key(umls_api_key)
+                if method == "keyring":
+                    st.success("UMLS key saved to OS keychain!")
+                elif method == "plaintext":
+                    st.warning("UMLS key saved as plaintext file (OS keychain unavailable).")
                 else:
                     st.error("Failed to save key")
         with col_clear:
             if st.button("Clear UMLS Key", width="stretch", disabled=not saved_umls_key_exists):
-                if clear_saved_umls_api_key():
+                result = clear_saved_umls_api_key()
+                if result.success:
                     st.session_state["umls_api_key"] = ""
-                    st.info("Key cleared")
+                    st.success(result.message)
                     st.rerun()
+                elif result.warning:
+                    st.session_state["umls_api_key"] = ""
+                    st.warning(result.message)
+                    st.rerun()
+                else:
+                    st.error(result.message)
         
         if not umls_api_key:
             st.warning("UMLS API key required for API mode")
@@ -993,6 +1022,21 @@ if "extracted_pico" in st.session_state:
                     st.session_state["expansion_done"] = False  # Need CUI selection first
         else:
             # ===== Local Mode =====
+            # Guard: show precise missing-file message when META/ is absent
+            _missing = []
+            if not MESH_XML_PATH.exists():
+                _missing.append(str(MESH_XML_PATH))
+            if not UMLS_RRF_PATH.exists() and not UMLS_PARQUET_PATH.exists():
+                _missing.append(str(UMLS_RRF_PATH) + " or " + str(UMLS_PARQUET_PATH))
+            if _missing:
+                st.error(
+                    "**Local data files not found.** "
+                    "Place the following files next to the executable (in a `META/` folder):\n\n"
+                    + "\n".join(f"- `{m}`" for m in _missing)
+                    + "\n\nAlternatively, switch to **UMLS API** mode in the sidebar."
+                )
+                st.stop()
+
             with st.status("Expanding terms against MeSH and UMLS...", expanded=True) as status:
                 # Load databases
                 st.write("Loading MeSH database...")

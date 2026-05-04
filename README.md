@@ -24,6 +24,12 @@
     - Semantic Scholar (Relevance Search)
 - **Interactive Review**: Full control to review, edit, and select which terms to include before generation.
 
+## Project Documentation
+
+- [Audit notes](docs/AUDIT.md)
+- [Portable USB build plan](docs/CLAUDE_PORTABLE_PLAN.md)
+- [Claude fix brief for current review findings](docs/CLAUDE_FIX_REVIEW_FINDINGS.md)
+
 ## Installation
 
 ### Prerequisites
