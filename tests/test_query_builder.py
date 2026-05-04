@@ -3,6 +3,7 @@ import unittest
 from src.models import ExtractedPICO, MeSHDescriptor, SearchSettings, SubConcept
 from src.query_builder import QueryBuilder
 from src.models import Database
+from src.term_utils import rank_terms_by_relevance
 
 
 class QueryBuilderTests(unittest.TestCase):
@@ -63,6 +64,49 @@ class QueryBuilderTests(unittest.TestCase):
         query = QueryBuilder(settings).build_pico_query(pico, Database.PUBMED)
 
         self.assertEqual('"migraine frequency"', query.query_string)
+
+    def test_english_filter_removes_non_english_expanded_terms(self):
+        pico = ExtractedPICO(
+            population=[
+                SubConcept(
+                    name="condition",
+                    core_concept="diabetes mellitus",
+                    original_term="diabetes mellitus",
+                    umls_synonyms=["糖尿病", "diabetes"],
+                )
+            ]
+        )
+
+        query = QueryBuilder(SearchSettings()).build_pico_query(pico, Database.PUBMED)
+
+        self.assertIn("diabetes[tiab]", query.query_string)
+        self.assertNotIn("糖尿病", query.query_string)
+
+    def test_english_filter_can_be_disabled(self):
+        pico = ExtractedPICO(
+            population=[
+                SubConcept(
+                    name="condition",
+                    core_concept="diabetes mellitus",
+                    original_term="diabetes mellitus",
+                    umls_synonyms=["糖尿病"],
+                )
+            ]
+        )
+
+        settings = SearchSettings(english_only_terms=False)
+        query = QueryBuilder(settings).build_pico_query(pico, Database.PUBMED)
+
+        self.assertIn("糖尿病[tiab]", query.query_string)
+
+    def test_expanded_terms_are_ranked_by_deterministic_relevance(self):
+        ranked = rank_terms_by_relevance(
+            ["unrelated therapy", "diabetes", "diabetes mellitus"],
+            ["diabetes mellitus"],
+            english_only=True,
+        )
+
+        self.assertEqual("diabetes mellitus", ranked[0])
 
 
 if __name__ == "__main__":

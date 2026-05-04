@@ -403,7 +403,10 @@ class QueryBuilder:
         # Add MeSH terms with controlled vocabulary tagging
         for mesh_term in mesh_terms:
             mesh_term = clean_term(mesh_term)
-            if not is_likely_query_term(mesh_term):
+            if not is_likely_query_term(
+                mesh_term,
+                english_only=self.settings.english_only_terms,
+            ):
                 continue
             formatted = adapter.format_mesh_term(
                 mesh_term,
@@ -414,7 +417,10 @@ class QueryBuilder:
         # Add text terms with [tiab] tagging
         for text_term in text_terms:
             text_term = clean_term(text_term)
-            if not is_likely_query_term(text_term):
+            if not is_likely_query_term(
+                text_term,
+                english_only=self.settings.english_only_terms,
+            ):
                 continue
             formatted = adapter.format_text_term(text_term)
             formatted_terms.append(formatted)
@@ -433,7 +439,10 @@ class QueryBuilder:
         # ---------------------------------------------------------------------
         if sub_concept.modifier and core_block:
             modifier = normalize_term(sub_concept.modifier)
-            if not is_likely_query_term(modifier):
+            if not is_likely_query_term(
+                modifier,
+                english_only=self.settings.english_only_terms,
+            ):
                 return core_block
             modifier_term = adapter.format_text_term(modifier)
             # AND the modifier with the core concepts
@@ -515,7 +524,12 @@ class QueryBuilder:
                     concept_keywords.append(sc.modifier)
         
         # Join all concept keywords with spaces for relevance search
-        query_string = " ".join(dedupe_terms(concept_keywords))
+        query_string = " ".join(
+            dedupe_terms(
+                concept_keywords,
+                english_only=self.settings.english_only_terms,
+            )
+        )
         
         return SearchQuery(
             database=Database.SEMANTIC_SCHOLAR,

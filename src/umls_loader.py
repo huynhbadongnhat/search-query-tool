@@ -6,7 +6,7 @@ from typing import Callable, List, Optional
 from rapidfuzz import fuzz, process
 
 from .models import UMLSTermResult, UMLSMetadata
-from .term_utils import dedupe_terms, normalize_term
+from .term_utils import dedupe_terms, normalize_term, rank_terms_by_relevance
 
 
 # MRCONSO.RRF column schema (0-indexed)
@@ -180,7 +180,8 @@ class UMLSLoader:
         self, 
         query: str, 
         limit: Optional[int] = None,  # None = no limit on CUIs
-        min_score: int = 90  # Higher threshold for relevance
+        min_score: int = 90,  # Higher threshold for relevance
+        english_only: bool = True,
     ) -> List[UMLSTermResult]:
         """
         Search for UMLS concepts and return their synonyms.
@@ -208,7 +209,10 @@ class UMLSLoader:
             cuis = exact_matches.select("CUI").unique().to_series().to_list()
         else:
             # Step 2: Fuzzy match to find the best matching term
-            unique_terms = dedupe_terms(df.select("STR").unique().to_series().to_list())
+            unique_terms = dedupe_terms(
+                df.select("STR").unique().to_series().to_list(),
+                english_only=english_only,
+            )
             
             # Use higher score threshold for relevance
             matches = process.extract(
@@ -237,7 +241,11 @@ class UMLSLoader:
         results = []
         for cui in cuis:
             cui_df = df.filter(pl.col("CUI") == cui)
-            all_terms = dedupe_terms(cui_df.select("STR").unique().to_series().to_list())
+            all_terms = rank_terms_by_relevance(
+                cui_df.select("STR").unique().to_series().to_list(),
+                [query],
+                english_only=english_only,
+            )
             
             # Get metadata
             metadata = []
@@ -262,7 +270,10 @@ class UMLSLoader:
                 .to_series()
                 .to_list()
             )
-            preferred_candidates = dedupe_terms(preferred_terms) or all_terms
+            preferred_candidates = (
+                dedupe_terms(preferred_terms, english_only=english_only)
+                or all_terms
+            )
             if not preferred_candidates:
                 continue
             preferred = min(preferred_candidates, key=lambda x: (len(x) < 3, len(x)))
@@ -276,11 +287,14 @@ class UMLSLoader:
         
         return results
     
-    def get_synonyms_by_cui(self, cui: str) -> List[str]:
+    def get_synonyms_by_cui(self, cui: str, *, english_only: bool = True) -> List[str]:
         """Get all synonyms for a given CUI."""
         df = self.load()
         matches = df.filter(pl.col("CUI") == cui)
-        return dedupe_terms(matches.select("STR").unique().to_series().to_list())
+        return dedupe_terms(
+            matches.select("STR").unique().to_series().to_list(),
+            english_only=english_only,
+        )
 
 
 def preprocess_umls(

@@ -461,7 +461,7 @@ class UMLSClient:
         
         return sorted(scored, key=lambda x: x.score, reverse=True)
     
-    def _is_valid_term(self, term: str) -> bool:
+    def _is_valid_term(self, term: str, *, english_only: bool = True) -> bool:
         """
         Check if a term is valid for inclusion in search query.
         Filters out empty/noisy terms while retaining valid Unicode medical text.
@@ -469,10 +469,17 @@ class UMLSClient:
         term = normalize_term(term)
         if "(" in term or ")" in term:
             return False
-        return is_likely_query_term(term, max_length=120)
+        return is_likely_query_term(
+            term,
+            max_length=120,
+            english_only=english_only,
+        )
     
     def classify_atoms(
-        self, atoms: List[UMLSAtom]
+        self,
+        atoms: List[UMLSAtom],
+        *,
+        english_only: bool = True,
     ) -> Dict[str, List[str]]:
         """
         Classify atoms into MeSH backbone and free-text terms.
@@ -485,7 +492,7 @@ class UMLSClient:
         
         for atom in atoms:
             # Skip invalid terms
-            if not self._is_valid_term(atom.name):
+            if not self._is_valid_term(atom.name, english_only=english_only):
                 continue
                 
             if atom.root_source == "MSH" and atom.term_type in ("MH", "NM"):
@@ -496,8 +503,8 @@ class UMLSClient:
                 free_text.append(atom.name)
         
         return {
-            "mesh_backbone": dedupe_terms(mesh_backbone),
-            "free_text": dedupe_terms(free_text),
+            "mesh_backbone": dedupe_terms(mesh_backbone, english_only=english_only),
+            "free_text": dedupe_terms(free_text, english_only=english_only),
         }
     
     # High-sensitivity RELA tags for medical search (capture synonyms, spellings, historical names)
@@ -519,7 +526,10 @@ class UMLSClient:
     }
     
     def classify_relations(
-        self, relations: List[UMLSRelation]
+        self,
+        relations: List[UMLSRelation],
+        *,
+        english_only: bool = True,
     ) -> Dict[str, List]:
         """
         Classify relations into MeSH, synonyms, and hierarchy.
@@ -534,7 +544,7 @@ class UMLSClient:
         
         for rel in relations:
             # Skip invalid terms
-            if not self._is_valid_term(rel.related_name):
+            if not self._is_valid_term(rel.related_name, english_only=english_only):
                 continue
             
             # RL from MeSH → MeSH backbone
@@ -557,7 +567,7 @@ class UMLSClient:
                 })
         
         return {
-            "mesh_backbone": dedupe_terms(mesh_backbone),
-            "free_text": dedupe_terms(free_text),
+            "mesh_backbone": dedupe_terms(mesh_backbone, english_only=english_only),
+            "free_text": dedupe_terms(free_text, english_only=english_only),
             "hierarchical": hierarchical,
         }

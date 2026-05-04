@@ -49,6 +49,10 @@ class SearchSettings(BaseModel):
         default=True,
         description="Include synonyms from UMLS (Unified Medical Language System). Provides comprehensive term coverage across vocabularies."
     )
+    english_only_terms: bool = Field(
+        default=True,
+        description="Filter expanded free-text terms to English-like terms. This removes non-Latin scripts returned by broad vocabularies."
+    )
     
     # Match Quality
     min_fuzzy_score: int = Field(
@@ -80,6 +84,7 @@ class SearchSettings(BaseModel):
             include_mesh_entry_terms=True,
             explode_mesh_tree=True,
             include_umls_synonyms=True,
+            english_only_terms=True,
             min_fuzzy_score=70,
             include_title_abstract=True
         )
@@ -92,6 +97,7 @@ class SearchSettings(BaseModel):
             include_mesh_entry_terms=True,
             explode_mesh_tree=False,
             include_umls_synonyms=True,
+            english_only_terms=True,
             min_fuzzy_score=80,
             include_title_abstract=True
         )
@@ -104,6 +110,7 @@ class SearchSettings(BaseModel):
             include_mesh_entry_terms=False,
             explode_mesh_tree=False,
             include_umls_synonyms=False,
+            english_only_terms=True,
             min_fuzzy_score=90,
             include_title_abstract=True
         )
@@ -222,7 +229,7 @@ class SubConcept(BaseModel):
         if settings.include_umls_synonyms:
             terms.extend(self.umls_synonyms)
         
-        return dedupe_terms(terms)
+        return dedupe_terms(terms, english_only=settings.english_only_terms)
 
     def expansion_search_terms(self) -> List[str]:
         """Terms that should be sent to MeSH/UMLS for expansion.
