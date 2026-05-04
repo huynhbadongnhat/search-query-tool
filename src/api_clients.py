@@ -8,11 +8,12 @@ Provides access to UMLS REST API for:
 """
 
 import time
-import difflib
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, field
 import threading
 import requests
+
+from .term_utils import dedupe_terms, is_likely_query_term, normalize_term
 
 
 @dataclass
@@ -87,22 +88,32 @@ class UMLSClient:
         self.rate_limiter = rate_limiter or RateLimiter()
         self.version = "current"
         self.session = requests.Session()
+        self.last_trace: List[str] = []
     
     def _request(self, endpoint: str, params: Optional[Dict] = None, max_retries: int = 3) -> Dict:
         """Make a rate-limited API request with retry logic."""
         self.rate_limiter.acquire()
         
         url = f"{self.BASE_URL}{endpoint}"
-        params = params or {}
+        params = dict(params or {})
         params["apiKey"] = self.api_key
         
         last_error = None
         for attempt in range(max_retries):
             try:
                 response = self.session.get(url, params=params, timeout=30)
-                response.raise_for_status()
+                if not response.ok:
+                    message = f"UMLS API HTTP {response.status_code}"
+                    try:
+                        payload = response.json()
+                        detail = payload.get("error") or payload.get("message")
+                        if detail:
+                            message = f"{message}: {detail}"
+                    except Exception:
+                        pass
+                    raise RuntimeError(message)
                 return response.json()
-            except (requests.RequestException, requests.exceptions.ConnectionError) as e:
+            except (requests.RequestException, RuntimeError) as e:
                 last_error = e
                 if attempt < max_retries - 1:
                     # Exponential backoff: 1s, 2s, 4s
@@ -112,6 +123,31 @@ class UMLSClient:
                 raise
         
         raise RuntimeError(f"UMLS API request failed after {max_retries} retries: {last_error}")
+
+    def _paged_results(
+        self,
+        endpoint: str,
+        params: Optional[Dict] = None,
+        max_pages: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """Fetch UMLS endpoints that return paginated list results."""
+        collected: List[Dict[str, Any]] = []
+        params = dict(params or {})
+
+        for page_number in range(1, max_pages + 1):
+            page_params = dict(params)
+            page_params["pageNumber"] = page_number
+            data = self._request(endpoint, page_params)
+            results = data.get("result", [])
+            if not isinstance(results, list):
+                return collected
+            collected.extend(results)
+
+            page_count = data.get("pageCount")
+            if not page_count or page_number >= int(page_count):
+                break
+
+        return collected
     
     def search(self, term: str, max_results: int = 200) -> List[UMLSSearchResult]:
         """
@@ -124,6 +160,7 @@ class UMLSClient:
         Returns:
             List of search results with CUI, name, and source
         """
+        term = normalize_term(term)
         endpoint = f"/rest/search/{self.version}"
         params = {
             "string": term,
@@ -137,7 +174,7 @@ class UMLSClient:
             return [
                 UMLSSearchResult(
                     cui=r["ui"],
-                    name=r["name"],
+                    name=normalize_term(r["name"]),
                     root_source=r.get("rootSource", ""),
                     uri=r.get("uri", ""),
                 )
@@ -182,6 +219,9 @@ class UMLSClient:
         Returns:
             Tuple of (results, search_term_used)
         """
+        term = normalize_term(term)
+        self.last_trace = [f"Searching UMLS for '{term}'"]
+
         # Attempt 1: Full phrase
         results = self.search(term, max_results)
         scored = self.score_search_results(term, results)
@@ -201,7 +241,7 @@ class UMLSClient:
         
         # Only retry if we actually removed something and have content left
         if cleaned_term and cleaned_term != term and len(cleaned_term) > 2:
-            print(f"UMLS backoff: '{term}' → '{cleaned_term}'")
+            self.last_trace.append(f"Backoff search used '{cleaned_term}'")
             results = self.search(cleaned_term, max_results)
             scored = self.score_search_results(cleaned_term, results)
             if scored and scored[0].score >= min_score:
@@ -216,6 +256,7 @@ class UMLSClient:
                     results = self.search(word, max_results)
                     scored = self.score_search_results(word, results)
                     if scored and scored[0].score >= min_score:
+                        self.last_trace.append(f"Single-word backoff used '{word}'")
                         return scored, word
         
         # Return whatever we have from the original search
@@ -269,8 +310,7 @@ class UMLSClient:
                 "language": language,  # Filter to English only
             }
             
-            atoms_data = self._request(atoms_endpoint, params)
-            results = atoms_data.get("result", [])
+            results = self._paged_results(atoms_endpoint, params, max_pages=5)
             
             # Filter out clinical drug formulations
             filtered_atoms = []
@@ -279,17 +319,20 @@ class UMLSClient:
                 # Skip excluded term types
                 if tty in self.EXCLUDED_TERM_TYPES:
                     continue
+                name = normalize_term(a.get("name", ""))
+                if not name:
+                    continue
                 filtered_atoms.append(
                     UMLSAtom(
                         aui=a.get("ui", ""),
-                        name=a.get("name", ""),
+                        name=name,
                         root_source=a.get("rootSource", ""),
                         term_type=tty,
                         code=a.get("code", ""),
                     )
                 )
             return filtered_atoms
-        except requests.RequestException as e:
+        except Exception as e:
             raise RuntimeError(f"UMLS get_atoms failed for {cui}: {e}")
     
     def get_relations(self, cui: str) -> List[UMLSRelation]:
@@ -306,20 +349,19 @@ class UMLSClient:
         params = {"pageSize": 200}
         
         try:
-            data = self._request(endpoint, params)
-            results = data.get("result", [])
+            results = self._paged_results(endpoint, params, max_pages=5)
             
             return [
                 UMLSRelation(
                     related_cui=r.get("relatedId", "").split("/")[-1],  # Extract CUI from URI
-                    related_name=r.get("relatedIdName", ""),
+                    related_name=normalize_term(r.get("relatedIdName", "")),
                     rel=r.get("relationLabel", ""),
                     rela=r.get("additionalRelationLabel", "") or None,
                     root_source=r.get("rootSource", ""),
                 )
                 for r in results
             ]
-        except requests.RequestException as e:
+        except Exception as e:
             raise RuntimeError(f"UMLS get_relations failed for {cui}: {e}")
     
     def get_source_vocabularies(self, cui: str) -> List[str]:
@@ -422,42 +464,12 @@ class UMLSClient:
     def _is_valid_term(self, term: str) -> bool:
         """
         Check if a term is valid for inclusion in search query.
-        Filters out: empty, too short, too long, parentheses, non-English indicators.
+        Filters out empty/noisy terms while retaining valid Unicode medical text.
         """
-        if not term or not term.strip():
+        term = normalize_term(term)
+        if "(" in term or ")" in term:
             return False
-        term = term.strip()
-        
-        # Skip empty or single-char terms
-        if len(term) < 2:
-            return False
-        
-        # Skip overly long terms (clinical formulations)
-        if len(term) > 60:
-            return False
-        
-        # Skip terms with parentheses (usually context/disambiguation)
-        if '(' in term or ')' in term:
-            return False
-        
-        # Skip clinical registry patterns
-        patterns_to_skip = [
-            'product containing', 'producto que contiene', 
-            'mg/1 vial', 'milligram/1', 'clinical drug',
-            '(body structure)', '(disorder)', '(finding)'
-        ]
-        term_lower = term.lower()
-        if any(p in term_lower for p in patterns_to_skip):
-            return False
-        
-        # Skip non-English terms (non-ASCII characters indicate non-English)
-        # This catches Korean, Greek, Cyrillic, etc.
-        try:
-            term.encode('ascii')
-        except UnicodeEncodeError:
-            return False
-        
-        return True
+        return is_likely_query_term(term, max_length=120)
     
     def classify_atoms(
         self, atoms: List[UMLSAtom]
@@ -484,8 +496,8 @@ class UMLSClient:
                 free_text.append(atom.name)
         
         return {
-            "mesh_backbone": list(set(mesh_backbone)),
-            "free_text": list(set(free_text)),
+            "mesh_backbone": dedupe_terms(mesh_backbone),
+            "free_text": dedupe_terms(free_text),
         }
     
     # High-sensitivity RELA tags for medical search (capture synonyms, spellings, historical names)
@@ -545,7 +557,7 @@ class UMLSClient:
                 })
         
         return {
-            "mesh_backbone": list(set(mesh_backbone)),
-            "free_text": list(set(free_text)),
+            "mesh_backbone": dedupe_terms(mesh_backbone),
+            "free_text": dedupe_terms(free_text),
             "hierarchical": hierarchical,
         }

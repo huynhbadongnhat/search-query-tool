@@ -7,12 +7,18 @@ from .models import (
     Database, Sensitivity, ConceptTerms, SearchQuery, 
     MeSHDescriptor, SubConcept, ExtractedPICO, SearchSettings
 )
+from .term_utils import dedupe_terms, is_likely_query_term, normalize_term
 
 
 class DatabaseAdapter(ABC):
     """Abstract base class for database-specific query syntax."""
     
     database: Database
+    quote_char = '"'
+    reserved_words = {"AND", "OR", "NOT"}
+
+    def __init__(self, include_title_abstract: bool = True):
+        self.include_title_abstract = include_title_abstract
     
     @abstractmethod
     def format_mesh_term(self, term: str, explode: bool = False) -> str:
@@ -35,10 +41,23 @@ class DatabaseAdapter(ABC):
         pass
     
     def quote_if_needed(self, term: str) -> str:
-        """Quote multi-word terms."""
-        if ' ' in term:
-            return f'"{term}"'
+        """Normalize, escape, and quote terms when database syntax needs it."""
+        term = normalize_term(term)
+        term = normalize_term(self.escape_term(term))
+        needs_quote = (
+            " " in term
+            or term.upper() in self.reserved_words
+            or any(char in term for char in [":", "[", "]", "(", ")"])
+        )
+        if needs_quote:
+            return f"{self.quote_char}{term}{self.quote_char}"
         return term
+
+    def escape_term(self, term: str) -> str:
+        """Escape quote characters without introducing field syntax."""
+        if self.quote_char == "'":
+            return term.replace("'", "''")
+        return term.replace('"', " ")
 
 
 class PubMedAdapter(DatabaseAdapter):
@@ -46,7 +65,11 @@ class PubMedAdapter(DatabaseAdapter):
     
     database = Database.PUBMED
     
-    def __init__(self, proximity_distance: int = 0):
+    def __init__(
+        self,
+        proximity_distance: int = 0,
+        include_title_abstract: bool = True,
+    ):
         """
         Initialize PubMed adapter.
         
@@ -55,13 +78,14 @@ class PubMedAdapter(DatabaseAdapter):
                                0 = words must be adjacent (any order)
                                1-5 = allow N words between terms
         """
+        super().__init__(include_title_abstract=include_title_abstract)
         self.proximity_distance = proximity_distance
     
     def format_mesh_term(self, term: str, explode: bool = False) -> str:
         quoted = self.quote_if_needed(term)
         if explode:
-            return f"{quoted}[MeSH]"
-        return f"{quoted}[MeSH:NoExp]"
+            return f"{quoted}[MeSH Terms]"
+        return f"{quoted}[MeSH Terms:noexp]"
     
     def format_text_term(self, term: str) -> str:
         quoted = self.quote_if_needed(term)
@@ -69,6 +93,8 @@ class PubMedAdapter(DatabaseAdapter):
         # Correct syntax is [Title/Abstract:~N]
         # Single words MUST use [tiab] - proximity on single words is invalid!
         words = term.strip().split()
+        if not self.include_title_abstract:
+            return quoted
         if len(words) >= 2 and self.proximity_distance > 0:
             return f"{quoted}[Title/Abstract:~{self.proximity_distance}]"
         return f"{quoted}[tiab]"
@@ -93,15 +119,19 @@ class EmbaseAdapter(DatabaseAdapter):
     """Embase query syntax adapter."""
     
     database = Database.EMBASE
+    quote_char = "'"
     
     def format_mesh_term(self, term: str, explode: bool = False) -> str:
         # Embase uses single quotes around descriptors
+        term = self.escape_term(normalize_term(term))
         if explode:
             return f"'{term}'/exp"
         return f"'{term}'/de"  # de = descriptor, no explosion
     
     def format_text_term(self, term: str) -> str:
         quoted = self.quote_if_needed(term)
+        if not self.include_title_abstract:
+            return quoted
         return f"{quoted}:ti,ab"
     
     def combine_or(self, terms: List[str]) -> str:
@@ -127,12 +157,15 @@ class CochraneAdapter(DatabaseAdapter):
     
     def format_mesh_term(self, term: str, explode: bool = False) -> str:
         # Cochrane uses MeSH through the interface
+        term = normalize_term(term).replace("[", " ").replace("]", " ")
         if explode:
             return f"[mh {term}]"
         return f"[mh ^{term}]"  # ^ = no explosion
     
     def format_text_term(self, term: str) -> str:
         quoted = self.quote_if_needed(term)
+        if not self.include_title_abstract:
+            return quoted
         return f"{quoted}:ti,ab,kw"
     
     def combine_or(self, terms: List[str]) -> str:
@@ -162,7 +195,8 @@ class WebOfScienceAdapter(DatabaseAdapter):
     
     def format_text_term(self, term: str) -> str:
         quoted = self.quote_if_needed(term)
-        return f"TS={quoted}"
+        field = "TS" if self.include_title_abstract else "ALL"
+        return f"{field}={quoted}"
     
     def combine_or(self, terms: List[str]) -> str:
         if not terms:
@@ -191,6 +225,8 @@ class ScopusAdapter(DatabaseAdapter):
     
     def format_text_term(self, term: str) -> str:
         quoted = self.quote_if_needed(term)
+        if not self.include_title_abstract:
+            return f"ALL({quoted})"
         return f"TITLE-ABS-KEY({quoted})"
     
     def combine_or(self, terms: List[str]) -> str:
@@ -242,13 +278,12 @@ class SemanticScholarAdapter(DatabaseAdapter):
         return " ".join(blocks)
 
 
-# Adapter registry (for non-PubMed that don't need settings)
-DEFAULT_ADAPTERS = {
-    Database.EMBASE: EmbaseAdapter(),
-    Database.COCHRANE: CochraneAdapter(),
-    Database.WEB_OF_SCIENCE: WebOfScienceAdapter(),
-    Database.SCOPUS: ScopusAdapter(),
-    Database.SEMANTIC_SCHOLAR: SemanticScholarAdapter(),
+ADAPTER_CLASSES = {
+    Database.EMBASE: EmbaseAdapter,
+    Database.COCHRANE: CochraneAdapter,
+    Database.WEB_OF_SCIENCE: WebOfScienceAdapter,
+    Database.SCOPUS: ScopusAdapter,
+    Database.SEMANTIC_SCHOLAR: SemanticScholarAdapter,
 }
 
 
@@ -292,10 +327,13 @@ class QueryBuilder:
             if database == Database.PUBMED:
                 # PubMed needs proximity distance from settings
                 self._adapters[database] = PubMedAdapter(
-                    proximity_distance=self.settings.proximity_distance
+                    proximity_distance=self.settings.proximity_distance,
+                    include_title_abstract=self.settings.include_title_abstract,
                 )
             else:
-                self._adapters[database] = DEFAULT_ADAPTERS[database]
+                self._adapters[database] = ADAPTER_CLASSES[database](
+                    include_title_abstract=self.settings.include_title_abstract
+                )
         return self._adapters[database]
     
     def build_subconcept_block(
@@ -341,7 +379,10 @@ class QueryBuilder:
             # MeSH entry terms → [tiab] (these are synonyms, NOT indexed as MeSH)
             # They help find articles that use different terminology
             if self.settings.include_mesh_entry_terms:
-                text_terms.extend(sub_concept.mesh_descriptor.entry_terms)
+                if sub_concept.mesh_descriptor.ui.startswith("API:"):
+                    mesh_terms.extend(sub_concept.mesh_descriptor.entry_terms)
+                else:
+                    text_terms.extend(sub_concept.mesh_descriptor.entry_terms)
         
         # ---------------------------------------------------------------------
         # 3. UMLS synonyms → [tiab] (free text from other vocabularies)
@@ -355,27 +396,14 @@ class QueryBuilder:
         formatted_terms = []
         
         # Helper: Sanitize terms (remove noise)
-        def is_valid_term(term: str) -> bool:
-            """Filter out problematic terms."""
-            if not term or not term.strip():
-                return False
-            term = term.strip()
-            if len(term) < 2:
-                return False
-            if len(term) > 60:
-                return False
-            if any(x in term.lower() for x in ['product containing', 'producto que contiene', 'mg/1 vial', 'milligram/1']):
-                return False
-            return True
-        
         def clean_term(term: str) -> str:
             """Clean up a term."""
-            return term.strip()
+            return normalize_term(term)
         
         # Add MeSH terms with controlled vocabulary tagging
         for mesh_term in mesh_terms:
             mesh_term = clean_term(mesh_term)
-            if not is_valid_term(mesh_term):
+            if not is_likely_query_term(mesh_term):
                 continue
             formatted = adapter.format_mesh_term(
                 mesh_term,
@@ -386,7 +414,7 @@ class QueryBuilder:
         # Add text terms with [tiab] tagging
         for text_term in text_terms:
             text_term = clean_term(text_term)
-            if not is_valid_term(text_term):
+            if not is_likely_query_term(text_term):
                 continue
             formatted = adapter.format_text_term(text_term)
             formatted_terms.append(formatted)
@@ -394,12 +422,7 @@ class QueryBuilder:
         # ---------------------------------------------------------------------
         # 5. Remove duplicates while preserving order
         # ---------------------------------------------------------------------
-        seen = set()
-        unique_terms = []
-        for t in formatted_terms:
-            if t.lower() not in seen:
-                seen.add(t.lower())
-                unique_terms.append(t)
+        unique_terms = dedupe_terms(formatted_terms, max_length=500)
         
         # Build the core concepts block (OR'd)
         core_block = adapter.combine_or(unique_terms)
@@ -409,7 +432,10 @@ class QueryBuilder:
         # Note: direction_of_effect is explicitly DISCARDED to avoid outcome bias
         # ---------------------------------------------------------------------
         if sub_concept.modifier and core_block:
-            modifier_term = adapter.format_text_term(sub_concept.modifier)
+            modifier = normalize_term(sub_concept.modifier)
+            if not is_likely_query_term(modifier):
+                return core_block
+            modifier_term = adapter.format_text_term(modifier)
             # AND the modifier with the core concepts
             return f"({core_block} AND {modifier_term})"
         
@@ -482,11 +508,14 @@ class QueryBuilder:
             sub_concepts = getattr(pico, category, [])
             for sc in sub_concepts:
                 # Only use the original term (single word best for relevance matching)
-                if sc.original_term:
-                    concept_keywords.append(sc.original_term)
+                keyword = sc.core_concept or sc.original_term
+                if keyword:
+                    concept_keywords.append(keyword)
+                if sc.modifier:
+                    concept_keywords.append(sc.modifier)
         
         # Join all concept keywords with spaces for relevance search
-        query_string = " ".join(concept_keywords)
+        query_string = " ".join(dedupe_terms(concept_keywords))
         
         return SearchQuery(
             database=Database.SEMANTIC_SCHOLAR,
@@ -536,12 +565,7 @@ class QueryBuilder:
         terms.append(adapter.format_text_term(concept.original_keyword))
         
         # Remove duplicates
-        seen = set()
-        unique_terms = []
-        for t in terms:
-            if t.lower() not in seen:
-                seen.add(t.lower())
-                unique_terms.append(t)
+        unique_terms = dedupe_terms(terms, max_length=500)
         
         return adapter.combine_or(unique_terms)
     

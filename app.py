@@ -6,13 +6,14 @@ import os
 from datetime import datetime
 from pathlib import Path
 from src.models import (
-    Database, DataSource, SearchSettings, SubConcept, ExtractedPICO, ConceptTerms
+    Database, DataSource, SearchSettings, SubConcept, ExtractedPICO, MeSHDescriptor
 )
 from src.mesh_loader import MeSHLoader
 from src.umls_loader import UMLSLoader
 from src.keyword_extractor import KeywordExtractor
 from src.query_builder import QueryBuilder
 from src.api_clients import UMLSClient, RateLimiter
+from src.term_utils import dedupe_terms, split_comma_terms, normalize_term
 
 # Available NanoGPT models - fallback list if API fetch fails
 DEFAULT_NANOGPT_MODELS = [
@@ -122,14 +123,25 @@ def clear_saved_api_key() -> bool:
     except Exception:
         return False
 
+
+def get_secret_value(name: str) -> str:
+    """Read a Streamlit secret without requiring secrets.toml to exist."""
+    try:
+        value = st.secrets.get(name)
+    except Exception:
+        return ""
+    return str(value).strip() if value else ""
+
+
 def get_api_key() -> str:
     """Get API key from various sources (priority order)."""
     # 1. Session state (current session override)
     if st.session_state.get("api_key"):
         return st.session_state["api_key"]
     # 2. Streamlit secrets (for deployment)
-    if st.secrets.get("NANOGPT_API_KEY"):
-        return st.secrets["NANOGPT_API_KEY"]
+    secret_key = get_secret_value("NANOGPT_API_KEY")
+    if secret_key:
+        return secret_key
     # 3. Environment variable
     if os.environ.get("NANOGPT_API_KEY"):
         return os.environ["NANOGPT_API_KEY"]
@@ -173,8 +185,9 @@ def get_umls_api_key() -> str:
     """Get UMLS API key from various sources."""
     if st.session_state.get("umls_api_key"):
         return st.session_state["umls_api_key"]
-    if st.secrets.get("UMLS_API_KEY"):
-        return st.secrets["UMLS_API_KEY"]
+    secret_key = get_secret_value("UMLS_API_KEY")
+    if secret_key:
+        return secret_key
     if os.environ.get("UMLS_API_KEY"):
         return os.environ["UMLS_API_KEY"]
     return load_saved_umls_api_key()
@@ -209,7 +222,7 @@ def get_umls_loader():
 
 def get_keyword_extractor():
     """Get keyword extractor with current model settings."""
-    api_key = st.session_state.get("api_key", "")
+    api_key = get_api_key()
     model = st.session_state.get("selected_model", DEFAULT_NANOGPT_MODELS[0])
     return KeywordExtractor(api_key=api_key, model=model)
 
@@ -375,7 +388,7 @@ with st.sidebar:
             "Minimum Match Score",
             min_value=50,
             max_value=100,
-            value=90,
+            value=default_fuzzy,
             step=5,
             help="Higher = stricter matching, fewer results. Lower = looser matching, more results."
         )
@@ -417,12 +430,13 @@ with st.sidebar:
     saved_key_exists = API_KEY_FILE.exists()
     
     # Show source indicator
-    if st.secrets.get("NANOGPT_API_KEY"):
+    if get_secret_value("NANOGPT_API_KEY"):
         st.caption("Using key from secrets.toml")
     elif os.environ.get("NANOGPT_API_KEY"):
         st.caption("Using key from environment variable")
     elif saved_key_exists:
         st.caption("Using saved key from local config")
+    st.caption("Saved keys are written to a local plaintext file. Prefer environment variables or Streamlit secrets on shared machines.")
     
     # API key input
     api_key_input = st.text_input(
@@ -532,6 +546,7 @@ with st.sidebar:
         # Load saved UMLS key
         current_umls_key = get_umls_api_key()
         saved_umls_key_exists = UMLS_API_KEY_FILE.exists()
+        st.caption("Saved UMLS keys are written to a local plaintext file. Prefer environment variables or Streamlit secrets on shared machines.")
         
         umls_api_key = st.text_input(
             "UMLS API Key",
@@ -576,15 +591,111 @@ for multiple literature databases. **Now with sub-concept grouping for accurate 
 # Helper Callbacks
 # =============================================================================
 
+def clear_prefixed_state(prefixes: tuple[str, ...]) -> None:
+    """Remove dynamic widget state created from variable PICO structures."""
+    for key in list(st.session_state.keys()):
+        if key.startswith(prefixes):
+            del st.session_state[key]
+
+
 def clear_all_callback():
     """Callback to clear all state."""
     keys_to_clear = [
-        "extracted_pico", "expanded_pico", "queries", "expansion_done"
+        "extracted_pico", "expanded_pico", "queries", "expansion_done",
+        "api_search_done", "api_search_pico", "cui_candidates", "mesh_backbone_terms",
+        "query_audit_rows", "query_question", "original_question",
+        "llm_raw_response", "llm_error", "llm_used_fallback"
     ]
     for key in keys_to_clear:
         if key in st.session_state:
             del st.session_state[key]
+    clear_prefixed_state((
+        "name_", "core_", "modifier_", "direction_", "terms_",
+        "use_mesh_", "umls_sel_", "manual_terms_", "cui_select_", "show_all_",
+    ))
     st.session_state["clear_counter"] = st.session_state.get("clear_counter", 0) + 1
+
+
+CATEGORY_KEYS = ["population", "intervention", "comparison", "outcome", "other"]
+
+
+def clear_downstream_state() -> None:
+    """Clear outputs that are invalidated by concept edits or a new extraction."""
+    for key in [
+        "expanded_pico", "queries", "expansion_done", "api_search_done",
+        "cui_candidates", "api_search_pico", "mesh_backbone_terms", "query_audit_rows",
+    ]:
+        st.session_state.pop(key, None)
+
+
+def add_subconcept(cat_key: str) -> None:
+    pico = st.session_state["extracted_pico"]
+    getattr(pico, cat_key).append(
+        SubConcept(
+            name="manual",
+            core_concept="",
+            original_term="",
+            expanded_terms=[],
+            explanation="Added during manual audit.",
+        )
+    )
+    clear_prefixed_state(("name_", "core_", "modifier_", "direction_", "terms_"))
+    clear_downstream_state()
+
+
+def remove_subconcept(cat_key: str, idx: int) -> None:
+    pico = st.session_state["extracted_pico"]
+    sub_concepts = getattr(pico, cat_key)
+    if 0 <= idx < len(sub_concepts):
+        del sub_concepts[idx]
+        clear_prefixed_state(("name_", "core_", "modifier_", "direction_", "terms_"))
+        clear_downstream_state()
+
+
+def sync_subconcept_from_inputs(sc: SubConcept, cat_key: str, idx: int) -> None:
+    """Write audited Streamlit inputs back to the PICO model."""
+    core = normalize_term(st.session_state.get(f"core_{cat_key}_{idx}", sc.core_concept))
+    sc.name = normalize_term(st.session_state.get(f"name_{cat_key}_{idx}", sc.name)) or core or "concept"
+    sc.core_concept = core
+    sc.original_term = core
+    sc.modifier = normalize_term(st.session_state.get(f"modifier_{cat_key}_{idx}", sc.modifier)) or None
+    sc.direction_of_effect = normalize_term(
+        st.session_state.get(f"direction_{cat_key}_{idx}", sc.direction_of_effect)
+    ) or None
+    sc.expanded_terms = split_comma_terms(st.session_state.get(f"terms_{cat_key}_{idx}", ""))
+
+
+def search_terms_for_subconcept(sc: SubConcept) -> list[str]:
+    return sc.expansion_search_terms()
+
+
+def build_generation_pico(pico: ExtractedPICO) -> tuple[ExtractedPICO, list[dict]]:
+    """Apply review selections without mutating the expanded PICO in session state."""
+    reviewed = pico.model_copy(deep=True)
+    audit_rows: list[dict] = []
+
+    for cat_key in CATEGORY_KEYS:
+        for idx, sc in enumerate(getattr(reviewed, cat_key, [])):
+            if not st.session_state.get(f"use_mesh_{cat_key}_{idx}", True):
+                sc.mesh_descriptor = None
+
+            state_key = f"umls_sel_{cat_key}_{idx}"
+            selected_synonyms = st.session_state.get(state_key, sc.umls_synonyms)
+            manual_terms = split_comma_terms(st.session_state.get(f"manual_terms_{cat_key}_{idx}", ""))
+            sc.umls_synonyms = dedupe_terms([*selected_synonyms, *manual_terms])
+
+            audit_rows.append({
+                "category": cat_key,
+                "name": sc.name,
+                "core_concept": sc.core_concept or sc.original_term,
+                "modifier": sc.modifier or "",
+                "mesh": sc.mesh_descriptor.name if sc.mesh_descriptor else "",
+                "mesh_entry_terms": len(sc.mesh_descriptor.entry_terms) if sc.mesh_descriptor else 0,
+                "umls_synonyms": len(sc.umls_synonyms),
+                "manual_terms": ", ".join(manual_terms),
+            })
+
+    return reviewed, audit_rows
 
 # Initialize clear counter
 if "clear_counter" not in st.session_state:
@@ -614,6 +725,12 @@ if extract_btn:
     if not question:
         st.error("Please enter a research question.")
     else:
+        clear_downstream_state()
+        clear_prefixed_state((
+            "name_", "core_", "modifier_", "direction_", "terms_",
+            "use_mesh_", "umls_sel_", "manual_terms_", "cui_select_", "show_all_",
+        ))
+        st.session_state["original_question"] = question
         with st.status("Extracting concepts with LLM...", expanded=True) as status:
             st.write("Sending request to LLM...")
             
@@ -623,12 +740,17 @@ if extract_btn:
             
             pico = extractor.extract_subconcepts(question, temperature=temp, top_p=top_p)
             st.session_state["extracted_pico"] = pico
+            st.session_state["llm_raw_response"] = extractor.last_raw_response
+            st.session_state["llm_error"] = extractor.last_error
+            st.session_state["llm_used_fallback"] = extractor.used_fallback
             
             # Count sub-concepts
             total = len(pico.all_sub_concepts())
             status.update(label=f"Extracted {total} sub-concepts!", state="complete")
             
         st.success(f"Extracted {total} sub-concepts across PICO categories!")
+        if extractor.used_fallback:
+            st.warning(extractor.last_error or "LLM extraction was unavailable; manual fallback terms were generated.")
 
 # =============================================================================
 # Step 2: Review Sub-Concepts
@@ -639,11 +761,15 @@ if "extracted_pico" in st.session_state:
     st.subheader("Step 2: Review & Edit Sub-Concepts")
     
     st.info("""
-    **Understanding the query logic:**
-    - Terms **within** a sub-concept are combined with **OR** (any synonym matches)
-    - Sub-concepts **within** a category are combined with **AND** (all aspects must match)
-    - PICO **categories** are combined with **AND** (must match Population AND Intervention AND Outcome, etc.)
+    Audit the concept structure before expansion. Core concepts are expanded through MeSH/UMLS; modifiers are kept as strict text filters; direction-of-effect terms are recorded for transparency but excluded from query generation.
     """)
+    if st.session_state.get("llm_used_fallback"):
+        st.warning(st.session_state.get("llm_error") or "LLM extraction used the manual fallback. Review all concepts carefully.")
+    elif st.session_state.get("llm_error"):
+        st.warning(st.session_state["llm_error"])
+    if st.session_state.get("llm_raw_response"):
+        with st.expander("LLM raw extraction response", expanded=False):
+            st.code(st.session_state["llm_raw_response"], language="json")
     
     pico = st.session_state["extracted_pico"]
     
@@ -663,46 +789,83 @@ if "extracted_pico" in st.session_state:
             
             if not sub_concepts:
                 st.write("*No sub-concepts extracted for this category*")
+                if st.button(f"Add {cat_label} concept", key=f"add_{cat_key}", on_click=add_subconcept, args=(cat_key,)):
+                    st.rerun()
             else:
                 # Display each sub-concept
-                for idx, sc in enumerate(sub_concepts):
-                    col_name, col_orig, col_terms = st.columns([1, 2, 4], vertical_alignment="center")
-                    
-                    with col_name:
-                        st.markdown(f"**{sc.name}**")
-                    
-                    with col_orig:
-                        st.text_input(
-                            "Original Term",
-                            value=sc.original_term,
-                            key=f"orig_{cat_key}_{idx}",
-                            disabled=True,
-                            label_visibility="collapsed"
-                        )
-                    
-                    with col_terms:
-                        # Editable synonyms
-                        current_terms = ", ".join(sc.expanded_terms)
-                        new_terms = st.text_input(
-                            "Synonyms",
-                            value=current_terms,
-                            key=f"terms_{cat_key}_{idx}",
-                            help="Enter synonyms, brand names or your preferred terms (comma-separated)",
-                            placeholder="Enter synonym, brand names or your preferred term",
-                            label_visibility="collapsed"
-                        )
-                        # Update if changed
-                        if new_terms != current_terms:
-                            sc.expanded_terms = [t.strip() for t in new_terms.split(",") if t.strip()]
-                
+                for idx, sc in enumerate(list(sub_concepts)):
+                    with st.container(border=True):
+                        col_name, col_core, col_modifier, col_remove = st.columns([1.2, 2.2, 2.2, 0.8], vertical_alignment="center")
+
+                        with col_name:
+                            st.text_input(
+                                "Label",
+                                value=sc.name,
+                                key=f"name_{cat_key}_{idx}",
+                                on_change=clear_downstream_state,
+                            )
+
+                        with col_core:
+                            st.text_input(
+                                "Core concept",
+                                value=sc.core_concept or sc.original_term,
+                                key=f"core_{cat_key}_{idx}",
+                                help="Expanded through MeSH/UMLS. Keep this as the main medical entity.",
+                                on_change=clear_downstream_state,
+                            )
+
+                        with col_modifier:
+                            st.text_input(
+                                "Modifier",
+                                value=sc.modifier or "",
+                                key=f"modifier_{cat_key}_{idx}",
+                                help="Strict text filter. Do not use for vocabulary expansion.",
+                                on_change=clear_downstream_state,
+                            )
+
+                        with col_remove:
+                            st.button(
+                                "Remove",
+                                key=f"remove_{cat_key}_{idx}",
+                                on_click=remove_subconcept,
+                                args=(cat_key, idx),
+                                use_container_width=True,
+                            )
+
+                        col_terms, col_direction = st.columns([3, 1.4], vertical_alignment="top")
+                        with col_terms:
+                            st.text_input(
+                                "Known synonyms, abbreviations, exact wording, brand names",
+                                value=", ".join(sc.expanded_terms),
+                                key=f"terms_{cat_key}_{idx}",
+                                help="These terms are also sent to MeSH/UMLS and remain auditable later.",
+                                on_change=clear_downstream_state,
+                            )
+                        with col_direction:
+                            st.text_input(
+                                "Direction recorded, not searched",
+                                value=sc.direction_of_effect or "",
+                                key=f"direction_{cat_key}_{idx}",
+                                help="Examples: reduction, prevention, increase. Excluded to avoid direction bias.",
+                                on_change=clear_downstream_state,
+                            )
+
+                        sync_subconcept_from_inputs(sc, cat_key, idx)
+                        if sc.explanation:
+                            st.caption(sc.explanation)
+
+                if st.button(f"Add {cat_label} concept", key=f"add_{cat_key}", on_click=add_subconcept, args=(cat_key,)):
+                    st.rerun()
+
                 # Logic preview
-                if len(sub_concepts) > 1:
+                if sub_concepts:
                     st.markdown("---")
-                    st.markdown("**Query logic for this category:**")
+                    st.markdown("**Query logic preview for this category:**")
                     logic_parts = []
                     for sc in sub_concepts:
-                        all_terms = [sc.original_term] + sc.expanded_terms[:2]
-                        logic_parts.append(f"({' OR '.join(all_terms)}...)")
+                        all_terms = search_terms_for_subconcept(sc)[:3]
+                        modifier = f" AND {sc.modifier}" if sc.modifier else ""
+                        logic_parts.append(f"({' OR '.join(all_terms)}...){modifier}")
                     st.code(" AND ".join(logic_parts), language=None)
     
     st.divider()
@@ -720,15 +883,16 @@ if "extracted_pico" in st.session_state:
     
     if expand_btn:
         data_source = st.session_state.get("data_source", DataSource.LOCAL)
+        settings = get_search_settings()
         
         if data_source == DataSource.API:
             # ===== API Mode =====
-            umls_api_key = st.session_state.get("umls_api_key", "")
+            umls_api_key = get_umls_api_key()
             if not umls_api_key:
                 st.error("UMLS API key required. Please enter it in the sidebar.")
             else:
                 with st.status("Searching UMLS API...", expanded=True) as status:
-                    pico = st.session_state["extracted_pico"]
+                    pico = st.session_state["extracted_pico"].model_copy(deep=True)
                     
                     # Initialize UMLS client
                     rate_limiter = RateLimiter(max_requests=19)
@@ -736,14 +900,14 @@ if "extracted_pico" in st.session_state:
                     
                     # Collect terms with sub-concept mapping
                     term_to_subconcept = {}  # term -> (cat_key, sc_index)
-                    for cat_key in ["population", "intervention", "comparison", "outcome", "other"]:
+                    for cat_key in CATEGORY_KEYS:
                         for sc_idx, sc in enumerate(getattr(pico, cat_key, [])):
-                            for term in [sc.original_term] + sc.expanded_terms:
+                            for term in search_terms_for_subconcept(sc):
                                 if term not in term_to_subconcept:
                                     term_to_subconcept[term] = []
                                 term_to_subconcept[term].append((cat_key, sc_idx))
                     
-                    all_search_terms = list(term_to_subconcept.keys())
+                    all_search_terms = dedupe_terms(term_to_subconcept.keys())
                     st.write(f"Searching {len(all_search_terms)} terms...")
                     
                     # Search all terms and collect CUI candidates with sub-concept links
@@ -752,22 +916,36 @@ if "extracted_pico" in st.session_state:
                         st.write(f"  → Searching: {term}")
                         try:
                             # Use smart search with backoff
-                            scored, used_term = umls_client.smart_search(term, min_score=50.0, max_results=200)
+                            scored, used_term = umls_client.smart_search(
+                                term,
+                                min_score=float(settings.min_fuzzy_score),
+                                max_results=200,
+                            )
                             if used_term != term:
                                 st.caption(f"    ↳ Matched via: '{used_term}'")
                             
                             for r in scored[:10]:  # Top 10 per term
+                                if r.score < settings.min_fuzzy_score:
+                                    continue
                                 if r.cui not in all_cui_candidates:
                                     all_cui_candidates[r.cui] = {
                                         "cui": r.cui,
                                         "name": r.name,
                                         "score": r.score,
                                         "sources": [r.root_source] if r.root_source else [],
+                                        "matched_terms": [term],
+                                        "used_terms": [used_term],
                                         "subconcepts": term_to_subconcept[term].copy(),
                                     }
                                 else:
                                     # Boost score and merge sub-concept links
                                     all_cui_candidates[r.cui]["score"] += r.score * 0.5
+                                    if r.root_source and r.root_source not in all_cui_candidates[r.cui]["sources"]:
+                                        all_cui_candidates[r.cui]["sources"].append(r.root_source)
+                                    if term not in all_cui_candidates[r.cui]["matched_terms"]:
+                                        all_cui_candidates[r.cui]["matched_terms"].append(term)
+                                    if used_term not in all_cui_candidates[r.cui]["used_terms"]:
+                                        all_cui_candidates[r.cui]["used_terms"].append(used_term)
                                     for sc_link in term_to_subconcept[term]:
                                         if sc_link not in all_cui_candidates[r.cui]["subconcepts"]:
                                             all_cui_candidates[r.cui]["subconcepts"].append(sc_link)
@@ -778,17 +956,20 @@ if "extracted_pico" in st.session_state:
                     
                     # Store candidates for CUI selection step
                     st.session_state["cui_candidates"] = all_cui_candidates
+                    st.session_state["api_search_pico"] = pico
                     st.session_state["umls_client"] = umls_client
                     st.session_state["api_search_done"] = True
                     st.session_state["expansion_done"] = False  # Need CUI selection first
         else:
             # ===== Local Mode =====
             with st.status("Expanding terms against MeSH and UMLS...", expanded=True) as status:
-                settings = get_search_settings()
-                
                 # Load databases
                 st.write("Loading MeSH database...")
-                mesh_loader = get_mesh_loader()
+                try:
+                    mesh_loader = get_mesh_loader()
+                except FileNotFoundError as e:
+                    st.error(str(e))
+                    st.stop()
                 
                 umls_loader = None
                 if UMLS_PARQUET_PATH.exists():
@@ -798,22 +979,32 @@ if "extracted_pico" in st.session_state:
                         umls_loader.load()
                 
                 # Expand each sub-concept
-                pico = st.session_state["extracted_pico"]
+                pico = st.session_state["extracted_pico"].model_copy(deep=True)
                 total_expanded = 0
                 
-                for cat_key in ["population", "intervention", "comparison", "outcome", "other"]:
+                for cat_key in CATEGORY_KEYS:
                     sub_concepts = getattr(pico, cat_key, [])
                     
                     for sc in sub_concepts:
-                        st.write(f"Expanding: {sc.original_term}")
+                        search_terms = search_terms_for_subconcept(sc)
+                        st.write(f"Expanding: {sc.core_concept or sc.original_term}")
                         
                         # MeSH lookup
-                        mesh_desc = mesh_loader.search_by_name(sc.original_term)
+                        mesh_desc = None
+                        for term in search_terms:
+                            mesh_desc = mesh_loader.search_by_name(term)
+                            if mesh_desc:
+                                break
                         if not mesh_desc:
-                            fuzzy_results = mesh_loader.search_fuzzy(
-                                sc.original_term, 
-                                min_score=settings.min_fuzzy_score
-                            )
+                            fuzzy_results = []
+                            for term in search_terms:
+                                fuzzy_results.extend(
+                                    mesh_loader.search_fuzzy(
+                                        term,
+                                        limit=5,
+                                        min_score=settings.min_fuzzy_score,
+                                    )
+                                )
                             mesh_desc = fuzzy_results[0] if fuzzy_results else None
                         
                         if mesh_desc:
@@ -823,15 +1014,18 @@ if "extracted_pico" in st.session_state:
                         # UMLS lookup
                         if umls_loader:
                             try:
-                                umls_results = umls_loader.search(
-                                    sc.original_term, 
-                                    min_score=settings.min_fuzzy_score
-                                )
-                                for result in umls_results:
-                                    sc.umls_synonyms.extend(result.synonyms)
-                                sc.umls_synonyms = list(set(sc.umls_synonyms))
+                                synonym_pool = []
+                                for term in search_terms:
+                                    umls_results = umls_loader.search(
+                                        term,
+                                        limit=5,
+                                        min_score=settings.min_fuzzy_score,
+                                    )
+                                    for result in umls_results:
+                                        synonym_pool.extend(result.synonyms)
+                                sc.umls_synonyms = dedupe_terms([*sc.umls_synonyms, *synonym_pool])
                             except Exception as e:
-                                st.warning(f"UMLS error for '{sc.original_term}': {e}")
+                                st.warning(f"UMLS error for '{sc.core_concept or sc.original_term}': {e}")
                 
                 st.session_state["expanded_pico"] = pico
                 st.session_state["expansion_done"] = True
@@ -923,6 +1117,10 @@ if st.session_state.get("api_search_done", False) and not st.session_state.get("
                         st.caption(source_tag)
                     with col3:
                         st.caption(f"{cui_data['score']:.0f}")
+                    st.caption(
+                        "Matched: "
+                        + ", ".join(cui_data.get("matched_terms", [])[:4])
+                    )
                 
                 # Show more button if there are more than 20
                 remaining = len(cuis_in_cat) - 20
@@ -934,7 +1132,7 @@ if st.session_state.get("api_search_done", False) and not st.session_state.get("
         # Expand selected CUIs button
         if st.button("Expand Selected Concepts", type="primary", disabled=not selected_cuis):
             umls_client = st.session_state.get("umls_client")
-            pico = st.session_state["extracted_pico"]
+            pico = st.session_state.get("api_search_pico", st.session_state["extracted_pico"]).model_copy(deep=True)
             
             with st.status("Expanding selected concepts...", expanded=True) as status:
                 # Track per-subconcept expansions
@@ -976,34 +1174,33 @@ if st.session_state.get("api_search_done", False) and not st.session_state.get("
                         st.warning(f"Error expanding {cui}: {e}")
                 
                 # Apply to PICO sub-concepts
-                for cat_key in ["population", "intervention", "comparison", "outcome", "other"]:
+                for cat_key in CATEGORY_KEYS:
                     sub_concepts = getattr(pico, cat_key, [])
                     for sc_idx, sc in enumerate(sub_concepts):
                         sc_link = (cat_key, sc_idx)
                         
                         # Assign MeSH terms (create a simple MeSHDescriptor if we have backbone terms)
                         if sc_link in subconcept_mesh and subconcept_mesh[sc_link]:
-                            mesh_terms = list(set(subconcept_mesh[sc_link]))
+                            mesh_terms = dedupe_terms(subconcept_mesh[sc_link])
                             # Store MeSH backbone as a descriptor-like object
                             if not sc.mesh_descriptor:
-                                from src.models import MeSHDescriptor
                                 sc.mesh_descriptor = MeSHDescriptor(
-                                    ui="API",
+                                    ui="API:UMLS",
                                     name=mesh_terms[0] if mesh_terms else "",
                                     entry_terms=mesh_terms[1:] if len(mesh_terms) > 1 else [],
                                     tree_numbers=[],
                                     qualifiers=[]
                                 )
                             else:
-                                sc.mesh_descriptor.entry_terms.extend(mesh_terms)
+                                sc.mesh_descriptor.entry_terms = dedupe_terms([*sc.mesh_descriptor.entry_terms, *mesh_terms])
                         
                         # Assign UMLS synonyms
                         if sc_link in subconcept_umls:
                             sc.umls_synonyms.extend(subconcept_umls[sc_link])
-                            sc.umls_synonyms = list(set(sc.umls_synonyms))
+                            sc.umls_synonyms = dedupe_terms(sc.umls_synonyms)
                 
                 # Deduplicate global
-                global_mesh_backbone = list(set(global_mesh_backbone))
+                global_mesh_backbone = dedupe_terms(global_mesh_backbone)
                 
                 st.session_state["expanded_pico"] = pico
                 st.session_state["mesh_backbone_terms"] = global_mesh_backbone
@@ -1025,7 +1222,7 @@ if st.session_state.get("expansion_done", False):
     pico = st.session_state.get("expanded_pico", st.session_state.get("extracted_pico"))
     settings = get_search_settings()
     
-    for cat_key in ["population", "intervention", "comparison", "outcome", "other"]:
+    for cat_key in CATEGORY_KEYS:
         sub_concepts = getattr(pico, cat_key, [])
         if not sub_concepts:
             continue
@@ -1033,22 +1230,24 @@ if st.session_state.get("expansion_done", False):
         st.markdown(f"### {cat_key.capitalize()}")
         
         for idx, sc in enumerate(sub_concepts):
-            with st.expander(f"**{sc.name}**: {sc.original_term}", expanded=True):
+            title = sc.core_concept or sc.original_term
+            with st.expander(f"**{sc.name}**: {title}", expanded=True):
+                if sc.modifier:
+                    st.caption(f"Modifier will be ANDed as text: {sc.modifier}")
+                if sc.direction_of_effect:
+                    st.caption(f"Direction recorded but excluded: {sc.direction_of_effect}")
                 col_mesh, col_umls = st.columns(2)
                 
                 with col_mesh:
                     st.markdown("**MeSH**")
                     if sc.mesh_descriptor:
-                        use_mesh = st.checkbox(
+                        st.checkbox(
                             f"Include: {sc.mesh_descriptor.name}",
                             value=True,
                             key=f"use_mesh_{cat_key}_{idx}"
                         )
-                        if not use_mesh:
-                            sc.mesh_descriptor = None
-                        else:
-                            entry_count = len(sc.mesh_descriptor.entry_terms)
-                            st.caption(f"+ {entry_count} entry terms")
+                        entry_count = len(sc.mesh_descriptor.entry_terms)
+                        st.caption(f"+ {entry_count} controlled/entry terms")
                     else:
                         st.caption("No MeSH match found")
                 
@@ -1058,16 +1257,22 @@ if st.session_state.get("expansion_done", False):
                         # Already filtered to English at API level
                         state_key = f"umls_sel_{cat_key}_{idx}"
                         
-                        # Multiselect - use default only on first render
-                        selected = st.multiselect(
+                        default_synonyms = sc.umls_synonyms if state_key not in st.session_state else None
+                        st.multiselect(
                             "Select synonyms:",
                             options=sc.umls_synonyms,
-                            default=sc.umls_synonyms[:10] if state_key not in st.session_state else None,
+                            default=default_synonyms,
                             key=state_key,
                             label_visibility="collapsed"
                         )
                     else:
                         st.caption("No UMLS synonyms found")
+                    st.text_input(
+                        "Manual additional terms",
+                        key=f"manual_terms_{cat_key}_{idx}",
+                        placeholder="Comma-separated terms to include after audit",
+                        help="Added directly to the final free-text synonym set.",
+                    )
     
     st.divider()
     
@@ -1076,20 +1281,16 @@ if st.session_state.get("expansion_done", False):
         settings = get_search_settings()
         builder = QueryBuilder(settings=settings)
         
-        # Apply session state selections to PICO before building
-        for cat_key in ["population", "intervention", "comparison", "outcome", "other"]:
-            sub_concepts = getattr(pico, cat_key, [])
-            for idx, sc in enumerate(sub_concepts):
-                state_key = f"umls_sel_{cat_key}_{idx}"
-                if state_key in st.session_state:
-                    sc.umls_synonyms = st.session_state[state_key]
+        generation_pico, audit_rows = build_generation_pico(pico)
         
         queries = []
         for db in selected_dbs:
-            query = builder.build_pico_query(pico, db)
+            query = builder.build_pico_query(generation_pico, db)
             queries.append(query)
         
         st.session_state["queries"] = queries
+        st.session_state["query_audit_rows"] = audit_rows
+        st.session_state["query_question"] = st.session_state.get("original_question", question)
         st.success(f"Generated queries for {len(queries)} databases!")
 
 # =============================================================================
@@ -1099,10 +1300,11 @@ if st.session_state.get("expansion_done", False):
 if "queries" in st.session_state:
     st.divider()
     queries = st.session_state["queries"]
+    query_question = st.session_state.get("query_question", st.session_state.get("original_question", question))
     
     # Download All Queries
     download_text = f"Search Queries Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-    download_text += f"Question: {question}\n\n"
+    download_text += f"Question: {query_question}\n\n"
     download_text += "=" * 80 + "\n\n"
     
     db_names = {
@@ -1131,6 +1333,9 @@ if "queries" in st.session_state:
     
     st.divider()
     st.subheader("Generated Search Queries")
+    if st.session_state.get("query_audit_rows"):
+        with st.expander("Final term audit summary", expanded=False):
+            st.dataframe(st.session_state["query_audit_rows"], use_container_width=True)
     
     for query in queries:
         db_name = db_names[query.database]

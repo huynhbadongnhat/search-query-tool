@@ -3,10 +3,11 @@
 import os
 import json
 import requests
-from typing import List, Optional, Iterator
-from pydantic import BaseModel
+from typing import List, Optional
+from pydantic import BaseModel, Field
 
 from .models import SubConcept, ExtractedPICO
+from .term_utils import dedupe_terms, normalize_term
 
 
 # NanoGPT API configuration
@@ -20,11 +21,11 @@ DEFAULT_MODEL = "Qwen/Qwen3-VL-235B-A22B-Instruct"
 
 class ExtractedKeywords(BaseModel):
     """Structured output from keyword extraction (legacy)."""
-    population: List[str] = []
-    intervention: List[str] = []
-    comparison: List[str] = []
-    outcome: List[str] = []
-    other: List[str] = []
+    population: List[str] = Field(default_factory=list)
+    intervention: List[str] = Field(default_factory=list)
+    comparison: List[str] = Field(default_factory=list)
+    outcome: List[str] = Field(default_factory=list)
+    other: List[str] = Field(default_factory=list)
     
     def all_keywords(self) -> List[str]:
         """Get all keywords as a flat list."""
@@ -67,8 +68,9 @@ Analyze the research question and extract search concepts organized by the PICO 
    - Keep multi-word medical terms together in `core_concept` if they define a single entity (e.g., "Heart Attack", "Thyroid Eye Disease").
    - Do NOT split these into "Thyroid" and "Eye" and "Disease".
 
-4. **No Abbreviations**: 
-   - Expand all abbreviations in `core_concept` (e.g., use "Myocardial Infarction", not "MI").
+4. **Canonical Core, Auditable Variants**:
+   - Use the expanded canonical term in `core_concept` (e.g., "Myocardial Infarction", not "MI").
+   - Put common abbreviations, spelling variants, and exact wording from the question in `expanded_terms`.
 
 5. **Separate Routes of Administration** (CRITICAL for drugs):
    - Drug CLASS goes in `core_concept` (e.g., "Steroids", "Antibiotics", "Glucocorticoids").
@@ -81,6 +83,7 @@ For each item in a PICO category, provide:
 - "core_concept": The main medical entity (Noun phrase) - REQUIRED
 - "modifier": Any adjective constraining the concept (Population/Intervention only, optional)
 - "direction_of_effect": Any term indicating increase/decrease/change (Outcome only, optional)
+- "expanded_terms": Known synonyms, abbreviations, spelling variants, brand names, and exact user wording not already captured
 - "explanation": Brief reasoning
 
 ## Example 1:
@@ -93,6 +96,7 @@ Question: "Is teprotumumab effective in reducing proptosis for active thyroid ey
       "name": "disease",
       "core_concept": "Thyroid Eye Disease",
       "modifier": "active",
+      "expanded_terms": ["TED", "thyroid-associated ophthalmopathy", "Graves ophthalmopathy"],
       "explanation": "Core disease is TED; active is the specific disease state to filter by."
     }}
   ],
@@ -101,6 +105,7 @@ Question: "Is teprotumumab effective in reducing proptosis for active thyroid ey
       "name": "drug",
       "core_concept": "teprotumumab",
       "modifier": null,
+      "expanded_terms": ["Tepezza"],
       "explanation": "Specific drug name."
     }}
   ],
@@ -109,6 +114,7 @@ Question: "Is teprotumumab effective in reducing proptosis for active thyroid ey
       "name": "comparator_drug",
       "core_concept": "Steroids",
       "modifier": "intravenous",
+      "expanded_terms": ["corticosteroids", "glucocorticoids"],
       "explanation": "The drug CLASS is Steroids (core); intravenous is ROUTE OF ADMINISTRATION (modifier). Never include route in core_concept!"
     }}
   ],
@@ -117,6 +123,7 @@ Question: "Is teprotumumab effective in reducing proptosis for active thyroid ey
       "name": "clinical_measurement",
       "core_concept": "proptosis",
       "direction_of_effect": "reduction",
+      "expanded_terms": ["exophthalmos"],
       "explanation": "The clinical presentation is proptosis; reduction is the biased outcome direction (will be ignored)."
     }}
   ],
@@ -218,7 +225,12 @@ class KeywordExtractor:
         self.base_url = base_url
         
         if not self.api_key:
-            print("Warning: No API key provided. Set NANOGPT_API_KEY env var.")
+            self.last_error = "No API key configured; using manual fallback extraction."
+        else:
+            self.last_error = None
+        self.last_raw_response: Optional[str] = None
+        self.last_prompt: Optional[str] = None
+        self.used_fallback = False
     
     def _get_headers(self) -> dict:
         """Get request headers."""
@@ -229,6 +241,9 @@ class KeywordExtractor:
     
     def _call_llm(self, prompt: str, temperature: float = 0.1, top_p: float = 0.3) -> Optional[str]:
         """Call the LLM and return the response content."""
+        self.last_prompt = prompt
+        self.last_raw_response = None
+        self.last_error = None
         try:
             response = requests.post(
                 f"{self.base_url}/chat/completions",
@@ -246,14 +261,16 @@ class KeywordExtractor:
             )
             
             if response.status_code != 200:
-                print(f"API error: {response.status_code}")
+                self.last_error = f"LLM API error: HTTP {response.status_code}"
                 return None
             
             data = response.json()
-            return data["choices"][0]["message"]["content"]
+            content = data["choices"][0]["message"]["content"]
+            self.last_raw_response = content
+            return content
             
         except Exception as e:
-            print(f"LLM call error: {e}")
+            self.last_error = f"LLM call error: {e}"
             return None
     
     def extract_subconcepts(
@@ -277,32 +294,51 @@ class KeywordExtractor:
             ExtractedPICO with sub-concepts for each category
         """
         if not self.api_key:
+            self.used_fallback = True
             return self._manual_extract_subconcepts(question)
         
         prompt = SUBCONCEPT_EXTRACTION_PROMPT.format(question=question)
         content = self._call_llm(prompt, temperature, top_p)
         
         if content:
-            return self._parse_subconcept_response(content)
+            self.used_fallback = False
+            pico = self._parse_subconcept_response(content, fallback_question=question)
+            return pico
         else:
+            self.used_fallback = True
             return self._manual_extract_subconcepts(question)
     
-    def _parse_subconcept_response(self, content: str) -> ExtractedPICO:
+    def _extract_json_object(self, content: str) -> dict:
+        """Extract the first complete JSON object from a model response."""
+        text = content.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+
+        decoder = json.JSONDecoder()
+        for idx, char in enumerate(text):
+            if char != "{":
+                continue
+            try:
+                obj, _ = decoder.raw_decode(text[idx:])
+                if isinstance(obj, dict):
+                    return obj
+            except json.JSONDecodeError:
+                continue
+        raise json.JSONDecodeError("No JSON object found", text, 0)
+
+    def _parse_subconcept_response(
+        self,
+        content: str,
+        fallback_question: str = "",
+    ) -> ExtractedPICO:
         """Parse LLM response to extract sub-concepts."""
-        content = content.strip()
-        
-        # Remove markdown code blocks if present
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        
-        content = content.strip()
-        
         try:
-            data = json.loads(content)
+            data = self._extract_json_object(content)
             
             # Parse each category
             pico = ExtractedPICO()
@@ -314,7 +350,8 @@ class KeywordExtractor:
                 for item in cat_data:
                     if isinstance(item, dict):
                         # NEW format with core_concept/modifier/direction_of_effect
-                        core = item.get("core_concept", item.get("original_term", ""))
+                        core = normalize_term(item.get("core_concept", item.get("original_term", "")))
+                        expanded_terms = dedupe_terms(item.get("expanded_terms", []))
                         sub_concepts.append(SubConcept(
                             name=item.get("name", "unknown"),
                             core_concept=core,
@@ -323,10 +360,11 @@ class KeywordExtractor:
                             explanation=item.get("explanation"),
                             # Legacy fields for backward compatibility
                             original_term=core,  # Map core_concept to original_term
-                            expanded_terms=item.get("expanded_terms", [])
+                            expanded_terms=expanded_terms
                         ))
                     elif isinstance(item, str):
                         # Legacy format - single term
+                        item = normalize_term(item)
                         sub_concepts.append(SubConcept(
                             name=item,
                             core_concept=item,
@@ -338,18 +376,12 @@ class KeywordExtractor:
             
             return pico
             
-        except json.JSONDecodeError:
-            # Try to find JSON object in the text
-            import re
-            match = re.search(r'\{.*\}', content, re.DOTALL)
-            if match:
-                try:
-                    return self._parse_subconcept_response(match.group())
-                except Exception:
-                    pass
+        except Exception as exc:
+            self.last_error = f"Could not parse LLM JSON; using fallback extraction. Details: {exc}"
         
         # Fallback
-        return self._manual_extract_subconcepts("")
+        self.used_fallback = True
+        return self._manual_extract_subconcepts(fallback_question)
     
     def _manual_extract_subconcepts(self, question: str) -> ExtractedPICO:
         """Simple fallback extraction without LLM."""
@@ -387,7 +419,7 @@ class KeywordExtractor:
         
         # Create sub-concepts from unique words
         sub_concepts = [
-            SubConcept(name=w, original_term=w, expanded_terms=[])
+            SubConcept(name=w, core_concept=w, original_term=w, expanded_terms=[])
             for w in unique
         ]
         

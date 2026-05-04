@@ -1,8 +1,10 @@
 """Pydantic models for MeSH Search Query Tool."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict
 from enum import Enum
+
+from .term_utils import dedupe_terms, normalize_term
 
 
 class Database(str, Enum):
@@ -122,8 +124,8 @@ class UMLSTermResult(BaseModel):
     """Result from UMLS lookup."""
     cui: str
     preferred_name: str
-    synonyms: List[str]
-    metadata: List[UMLSMetadata]
+    synonyms: List[str] = Field(default_factory=list)
+    metadata: List[UMLSMetadata] = Field(default_factory=list)
 
 
 # =============================================================================
@@ -141,9 +143,9 @@ class MeSHDescriptor(BaseModel):
     """MeSH descriptor (main heading)."""
     ui: str  # Descriptor UI (D...)
     name: str  # Preferred name
-    entry_terms: List[str]  # Synonyms from XML
-    tree_numbers: List[str]  # For hierarchy/explosion
-    qualifiers: List[MeSHQualifier]
+    entry_terms: List[str] = Field(default_factory=list)  # Synonyms from XML
+    tree_numbers: List[str] = Field(default_factory=list)  # For hierarchy/explosion
+    qualifiers: List[MeSHQualifier] = Field(default_factory=list)
 
 
 # =============================================================================
@@ -173,15 +175,42 @@ class SubConcept(BaseModel):
     
     # LEGACY: Keep for backward compatibility during transition
     original_term: str = ""  # Will be deprecated, use core_concept
-    expanded_terms: List[str] = []  # LLM-provided synonyms (still used)
+    expanded_terms: List[str] = Field(default_factory=list)  # LLM/manual synonyms
     
     # Expansion results
     mesh_descriptor: Optional[MeSHDescriptor] = None
-    umls_synonyms: List[str] = []
+    umls_synonyms: List[str] = Field(default_factory=list)
+
+    @field_validator("name", "core_concept", "original_term", mode="before")
+    @classmethod
+    def _normalize_required_text(cls, value: str | None) -> str:
+        return normalize_term(value)
+
+    @field_validator("modifier", "direction_of_effect", "explanation", mode="before")
+    @classmethod
+    def _normalize_optional_text(cls, value: str | None) -> str | None:
+        normalized = normalize_term(value)
+        return normalized or None
+
+    @field_validator("expanded_terms", "umls_synonyms", mode="before")
+    @classmethod
+    def _dedupe_term_lists(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            value = [value]
+        return dedupe_terms(value)
+
+    def model_post_init(self, __context) -> None:
+        """Keep the legacy original_term populated while core_concept is adopted."""
+        if not self.core_concept and self.original_term:
+            self.core_concept = self.original_term
+        if self.core_concept and not self.original_term:
+            self.original_term = self.core_concept
     
     def get_all_terms(self, settings: SearchSettings) -> List[str]:
         """Get all terms for this sub-concept based on settings."""
-        terms = [self.original_term]
+        terms = [self.core_concept or self.original_term]
         terms.extend(self.expanded_terms)
         
         if self.mesh_descriptor:
@@ -193,16 +222,15 @@ class SubConcept(BaseModel):
         if settings.include_umls_synonyms:
             terms.extend(self.umls_synonyms)
         
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_terms = []
-        for term in terms:
-            lower = term.lower()
-            if lower not in seen:
-                seen.add(lower)
-                unique_terms.append(term)
-        
-        return unique_terms
+        return dedupe_terms(terms)
+
+    def expansion_search_terms(self) -> List[str]:
+        """Terms that should be sent to MeSH/UMLS for expansion.
+
+        Modifiers are intentionally excluded because they are strict text filters,
+        not vocabulary-expansion targets.
+        """
+        return dedupe_terms([self.core_concept or self.original_term, *self.expanded_terms])
 
 
 class PICOCategory(BaseModel):
@@ -213,7 +241,7 @@ class PICOCategory(BaseModel):
     Terms within each sub-concept are OR'd together.
     """
     category: str  # population, intervention, comparison, outcome, other
-    sub_concepts: List[SubConcept] = []
+    sub_concepts: List[SubConcept] = Field(default_factory=list)
     
     def is_empty(self) -> bool:
         """Check if this category has any sub-concepts."""
@@ -226,11 +254,11 @@ class ExtractedPICO(BaseModel):
     
     This is the output from the LLM keyword extraction.
     """
-    population: List[SubConcept] = []
-    intervention: List[SubConcept] = []
-    comparison: List[SubConcept] = []
-    outcome: List[SubConcept] = []
-    other: List[SubConcept] = []
+    population: List[SubConcept] = Field(default_factory=list)
+    intervention: List[SubConcept] = Field(default_factory=list)
+    comparison: List[SubConcept] = Field(default_factory=list)
+    outcome: List[SubConcept] = Field(default_factory=list)
+    other: List[SubConcept] = Field(default_factory=list)
     
     def get_category(self, name: str) -> List[SubConcept]:
         """Get sub-concepts for a category by name."""
@@ -266,7 +294,7 @@ class ConceptTerms(BaseModel):
     """Terms for a single concept after expansion (legacy)."""
     original_keyword: str
     mesh_descriptor: Optional[MeSHDescriptor] = None
-    umls_synonyms: List[str] = []
+    umls_synonyms: List[str] = Field(default_factory=list)
     
     def get_all_terms(self, sensitivity: Sensitivity) -> List[str]:
         """Get all terms based on sensitivity level."""
@@ -280,16 +308,7 @@ class ConceptTerms(BaseModel):
         if sensitivity in [Sensitivity.HIGH, Sensitivity.BALANCED]:
             terms.extend(self.umls_synonyms)
         
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_terms = []
-        for term in terms:
-            lower = term.lower()
-            if lower not in seen:
-                seen.add(lower)
-                unique_terms.append(term)
-        
-        return unique_terms
+        return dedupe_terms(terms)
     
     @classmethod
     def from_sub_concept(cls, sub: SubConcept) -> "ConceptTerms":
@@ -309,7 +328,7 @@ class SearchQuery(BaseModel):
     """Generated search query for a database."""
     database: Database
     query_string: str
-    concepts: List[ConceptTerms] = []  # Legacy
+    concepts: List[ConceptTerms] = Field(default_factory=list)  # Legacy
     pico: Optional[ExtractedPICO] = None  # New sub-concept structure
 
 

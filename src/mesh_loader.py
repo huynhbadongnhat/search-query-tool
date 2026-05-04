@@ -1,10 +1,11 @@
 """MeSH descriptor loader using lxml for efficient XML parsing."""
 
 from pathlib import Path
-from typing import Dict, List, Optional, Iterator
+from typing import Callable, Dict, List, Optional, Iterator
 from lxml import etree
 
 from .models import MeSHDescriptor, MeSHQualifier
+from .term_utils import dedupe_terms, normalize_term
 
 
 class MeSHLoader:
@@ -57,7 +58,7 @@ class MeSHLoader:
         return MeSHDescriptor(
             ui=ui,
             name=name,
-            entry_terms=entry_terms,
+            entry_terms=dedupe_terms(entry_terms),
             tree_numbers=tree_numbers,
             qualifiers=qualifiers
         )
@@ -71,7 +72,9 @@ class MeSHLoader:
         context = etree.iterparse(
             str(self.xml_path), 
             events=("end",), 
-            tag="DescriptorRecord"
+            tag="DescriptorRecord",
+            no_network=True,
+            resolve_entities=False,
         )
         
         for event, elem in context:
@@ -81,7 +84,7 @@ class MeSHLoader:
             while elem.getprevious() is not None:
                 del elem.getparent()[0]
     
-    def load(self, progress_callback: Optional[callable] = None) -> Dict[str, MeSHDescriptor]:
+    def load(self, progress_callback: Optional[Callable[[str], None]] = None) -> Dict[str, MeSHDescriptor]:
         """Load all descriptors into memory."""
         if self._descriptors is not None:
             return self._descriptors
@@ -114,11 +117,11 @@ class MeSHLoader:
         
         for ui, desc in descriptors.items():
             # Index the preferred name
-            self._name_index[desc.name.lower()] = ui
+            self._name_index[normalize_term(desc.name).casefold()] = ui
             
             # Index all entry terms
             for term in desc.entry_terms:
-                term_lower = term.lower()
+                term_lower = normalize_term(term).casefold()
                 # Don't overwrite if already exists (prefer earlier matches)
                 if term_lower not in self._name_index:
                     self._name_index[term_lower] = ui
@@ -148,7 +151,7 @@ class MeSHLoader:
         O(1) lookup using inverted index.
         """
         name_index = self.build_name_index()
-        ui = name_index.get(term.lower())
+        ui = name_index.get(normalize_term(term).casefold())
         
         if ui:
             return self._descriptors.get(ui)
@@ -170,7 +173,7 @@ class MeSHLoader:
             term.lower(),
             all_terms,
             scorer=fuzz.WRatio,
-            limit=None  # Get ALL matches
+            limit=limit
         )
         
         results = []
